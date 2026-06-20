@@ -24,11 +24,13 @@ export const useExamSecurity = ({
       warningCountRef.current += 1;
       const count = warningCountRef.current;
       setTabSwitchCount(count);
-      setWarningMessage(`${message} (Warning ${count}/${maxWarnings})`);
-      setShowWarning(true);
-      onWarning?.(count, message);
       if (count >= maxWarnings) {
+        setWarningMessage(`${message} (Disqualified)`);
         onDisqualify?.();
+      } else {
+        setWarningMessage(`${message} (Warning ${count}/${maxWarnings - 1})`);
+        setShowWarning(true);
+        onWarning?.(count, message);
       }
     },
     [maxWarnings, onWarning, onDisqualify]
@@ -120,6 +122,7 @@ export const useExamSecurity = ({
     showWarning,
     warningMessage,
     dismissWarning,
+    triggerWarning,
     enterFullscreen,
     exitFullscreen,
   };
