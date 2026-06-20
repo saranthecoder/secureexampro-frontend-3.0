@@ -434,7 +434,7 @@ const ExamPage = () => {
         localStorage.removeItem(`answers_${exam.examCode}_${parsedUser.email}`);
         setSubmitted(true);
         setShowConfirm(false);
-        exitFullscreen();
+        document.exitFullscreen?.().catch(() => {});
       } else {
         const errData = await res.json();
         if (errData.message === "Already submitted") {
@@ -442,7 +442,7 @@ const ExamPage = () => {
           localStorage.removeItem(`answers_${exam.examCode}_${parsedUser.email}`);
           setSubmitted(true);
           setShowConfirm(false);
-          exitFullscreen();
+          document.exitFullscreen?.().catch(() => {});
         }
       }
     } catch (err) {
@@ -450,7 +450,7 @@ const ExamPage = () => {
     } finally {
       setOfflineSyncPending(false);
     }
-  }, [exam?.examCode, exitFullscreen, offlineSyncPending]);
+  }, [exam?.examCode, offlineSyncPending]);
 
   // Sync background submission if connection is restored
   useEffect(() => {
@@ -524,14 +524,14 @@ const ExamPage = () => {
 
       setSubmitted(true);
       setShowConfirm(false);
-      exitFullscreen();
+      document.exitFullscreen?.().catch(() => {});
     } catch (error) {
       console.error("Network submission error:", error);
       if (!navigator.onLine) {
         alert("You are currently offline. Your exam progress has been safely saved locally. Keep this tab open—we will automatically synchronize your answers once your internet connection is restored.");
         setSubmitted(true);
         setShowConfirm(false);
-        exitFullscreen();
+        document.exitFullscreen?.().catch(() => {});
       } else {
         alert("Submission failed due to a server error. We saved a local copy of your response; please retry.");
       }
@@ -556,7 +556,7 @@ const ExamPage = () => {
   } = useExamSecurity({
     enabled: started && !submitted,
     maxWarnings: 3,
-    onDisqualify: () => submitExam(tabSwitchCount, faceWarningCount, false),
+    onDisqualify: (count: number) => submitExam(count, faceWarningCount, false),
   });
 
   // AI Face turning warning handler (max warnings: 5)

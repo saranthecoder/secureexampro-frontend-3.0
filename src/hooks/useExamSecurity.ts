@@ -4,7 +4,7 @@ interface UseExamSecurityOptions {
   enabled: boolean;
   maxWarnings?: number;
   onWarning?: (count: number, type: string) => void;
-  onDisqualify?: () => void;
+  onDisqualify?: (count: number) => void;
 }
 
 export const useExamSecurity = ({
@@ -26,7 +26,7 @@ export const useExamSecurity = ({
       setTabSwitchCount(count);
       if (count >= maxWarnings) {
         setWarningMessage(`${message} (Disqualified)`);
-        onDisqualify?.();
+        onDisqualify?.(count);
       } else {
         setWarningMessage(`${message} (Warning ${count}/${maxWarnings - 1})`);
         setShowWarning(true);
