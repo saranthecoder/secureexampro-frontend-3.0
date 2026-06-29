@@ -291,9 +291,7 @@ const ExamPage = () => {
     }
 
     const timerId = setTimeout(() => {
-      const startMs = new Date(exam.startTime).getTime();
-      const diff = startMs - Date.now();
-      setTimeLeftToStart(diff > 0 ? Math.floor(diff / 1000) : 0);
+      setTimeLeftToStart(prev => (prev !== null && prev > 0) ? prev - 1 : 0);
     }, 1000);
 
     return () => clearTimeout(timerId);
