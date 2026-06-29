@@ -115,7 +115,10 @@ const ExamPage = () => {
           const diff = startMs - Date.now();
           return diff > 0 ? Math.floor(diff / 1000) : 0;
         };
-        setTimeLeftToStart(calculateTimeLeft());
+        const rawTimeLeft = calculateTimeLeft();
+        // If rawTimeLeft <= 0 but server says not started yet, client clock is ahead.
+        // Enforce a minimum of 5 seconds to prevent infinite rapid-fire API hammering loops!
+        setTimeLeftToStart(rawTimeLeft > 0 ? rawTimeLeft : 5);
         return;
       }
 
