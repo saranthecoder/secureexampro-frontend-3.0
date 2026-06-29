@@ -1054,7 +1054,7 @@ const ExamPage = () => {
   // PRE START SCREEN
   // =======================
   if (!started) {
-    const isWaiting = timeLeftToStart === null || timeLeftToStart > 0;
+    const isWaiting = false;
     const hasNegativeMarking = !!(exam?.hasNegativeMarking || exam.questions?.some((q: any) => (q.negativeMarks || 0) > 0));
     const maxNegativeMark = exam?.maxNegativeMark || exam.questions?.reduce((max: number, q: any) => Math.max(max, q.negativeMarks || 0), 0) || 0;
 
