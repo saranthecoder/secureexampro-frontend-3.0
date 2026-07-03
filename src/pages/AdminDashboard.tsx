@@ -1130,6 +1130,8 @@ const AdminDashboard = () => {
                                 <td className="px-6 py-4 text-center font-extrabold text-blue-600">
                                   {r.isActive ? (
                                     <span className="text-slate-400 font-semibold italic">In Progress</span>
+                                  ) : r.terminated ? (
+                                    <span className="text-red-650 font-extrabold" title={`${r.score} / ${r.totalMarks}`}>Disqualified</span>
                                   ) : (
                                     `${r.score} / ${r.totalMarks}`
                                   )}
@@ -1150,7 +1152,7 @@ const AdminDashboard = () => {
                                     </Badge>
                                   ) : r.terminated ? (
                                     <Badge className="bg-red-50 text-red-700 border border-red-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
-                                      {r.faceTurnTerminated ? "Disqualified (Face)" : "Disqualified (Tab)"}
+                                      {r.terminatedByAdmin ? "Disqualified (Admin)" : r.faceTurnTerminated ? "Disqualified (Face)" : "Disqualified (Tab)"}
                                     </Badge>
                                   ) : (r.tabSwitched || (r.faceWarningCount && r.faceWarningCount > 0)) ? (
                                     <Badge className="bg-amber-50 text-amber-700 border border-amber-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">

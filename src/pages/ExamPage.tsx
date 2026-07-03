@@ -535,11 +535,12 @@ const ExamPage = () => {
       studentName: parsedUser.name,
       studentEmail: parsedUser.email,
       answers,
-      terminated: finalTabSwitchCount >= 3 || faceTurnTerminated,
+      terminated: finalTabSwitchCount >= 3 || faceTurnTerminated || isTerminatedByAdmin,
       tabSwitch: finalTabSwitchCount > 0,
       tabSwitchCount: finalTabSwitchCount,
       faceWarningCount: finalFaceWarningCount,
       faceTurnTerminated: faceTurnTerminated,
+      terminatedByAdmin: isTerminatedByAdmin,
     };
 
     const pendingKey = `pending_submission_${exam.examCode}_${parsedUser.email}`;
