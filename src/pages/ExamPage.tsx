@@ -131,6 +131,9 @@ const ExamPage = () => {
         return;
       }
 
+      setLobbyActive(false);
+      setTimeLeftToStart(0);
+
       // 🔀 Group & Shuffle Questions by Section (Direct Start flow)
       const predefinedOrder = [
         "Quantitative Aptitude",
