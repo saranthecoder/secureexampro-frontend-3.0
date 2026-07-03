@@ -55,6 +55,7 @@ const ExamPage = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const baselineFrame = useRef<Uint8ClampedArray | null>(null);
   const lastWarningTime = useRef<number | null>(null);
+  const clockOffset = useRef<number>(0);
 
   // Live Screen Proctoring states
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
@@ -92,6 +93,11 @@ const ExamPage = () => {
       const res = await fetch(`${BASE_URL}/exam/${code}`);
       const data = await res.json();
 
+      if (data.serverTime) {
+        const serverMs = new Date(data.serverTime).getTime();
+        clockOffset.current = serverMs - Date.now();
+      }
+
       if (!res.ok) {
         Swal.fire({
           title: "Unavailable",
@@ -112,13 +118,16 @@ const ExamPage = () => {
         setLobbyActive(true);
         const startMs = new Date(data.startTime).getTime();
         const calculateTimeLeft = () => {
-          const diff = startMs - Date.now();
-          return diff > 0 ? Math.floor(diff / 1000) : 0;
+          const currentServerMs = Date.now() + clockOffset.current;
+          const diff = startMs - currentServerMs;
+          if (diff <= 0) {
+            // Clock drift: server thinks it is not started yet.
+            // Wait 2 seconds before retrying to prevent rapid fetching.
+            return 2;
+          }
+          return Math.floor(diff / 1000);
         };
-        const rawTimeLeft = calculateTimeLeft();
-        // If rawTimeLeft <= 0 but server says not started yet, client clock is ahead.
-        // Enforce a minimum of 5 seconds to prevent infinite rapid-fire API hammering loops!
-        setTimeLeftToStart(rawTimeLeft > 0 ? rawTimeLeft : 5);
+        setTimeLeftToStart(calculateTimeLeft());
         return;
       }
 
@@ -291,7 +300,10 @@ const ExamPage = () => {
     }
 
     const timerId = setTimeout(() => {
-      setTimeLeftToStart(prev => (prev !== null && prev > 0) ? prev - 1 : 0);
+      const startMs = new Date(exam.startTime).getTime();
+      const currentServerMs = Date.now() + clockOffset.current;
+      const diff = startMs - currentServerMs;
+      setTimeLeftToStart(diff > 0 ? Math.floor(diff / 1000) : 0);
     }, 1000);
 
     return () => clearTimeout(timerId);
@@ -1054,7 +1066,7 @@ const ExamPage = () => {
   // PRE START SCREEN
   // =======================
   if (!started) {
-    const isWaiting = false;
+    const isWaiting = timeLeftToStart === null || timeLeftToStart > 0;
     const hasNegativeMarking = !!(exam?.hasNegativeMarking || exam.questions?.some((q: any) => (q.negativeMarks || 0) > 0));
     const maxNegativeMark = exam?.maxNegativeMark || exam.questions?.reduce((max: number, q: any) => Math.max(max, q.negativeMarks || 0), 0) || 0;
 
