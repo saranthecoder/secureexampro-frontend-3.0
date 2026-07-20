@@ -55,13 +55,13 @@ export const useExamSecurity = ({
       e.preventDefault();
     };
 
-    // Trap & Block System Keyboards, Calculator Buttons & Forbidden Shortcuts
+    // Trap & Block System Keyboards, Calculator Buttons, Windows Keys & Function Keys (F1 - F12)
     const handleKeyDown = (e: KeyboardEvent) => {
-      const key = e.key;
-      const code = e.code;
-      const lowerKey = key ? key.toLowerCase() : '';
+      const key = e.key || '';
+      const code = e.code || '';
+      const lowerKey = key.toLowerCase();
 
-      // 1. Dedicated Hardware Calculator Keys (Windows, Mac, Linux keyboards)
+      // 1. Dedicated Hardware Calculator Keys
       const isCalculatorKey =
         key === 'LaunchCalculator' ||
         code === 'LaunchCalculator' ||
@@ -73,35 +73,42 @@ export const useExamSecurity = ({
         key === 'Calc' ||
         code === 'Calc';
 
-      // 2. OS App Launchers & System Shortcuts (Meta/Win key, Spotlight, Run)
-      const isSystemLauncher =
+      // 2. Windows / Meta / OS Keys & System Launchers
+      const isWindowsOrMetaKey =
         key === 'Meta' ||
         key === 'OS' ||
+        key === 'Win' ||
+        key === 'Windows' ||
         code === 'MetaLeft' ||
         code === 'MetaRight' ||
-        (e.metaKey && code === 'Space') || // Mac Spotlight
-        (e.altKey && code === 'Space') ||  // Windows PowerToys / Search
-        (e.metaKey && lowerKey === 'r') ||   // Run dialog
-        (e.ctrlKey && key === 'Escape');    // Start Menu
+        code === 'OSLeft' ||
+        code === 'OSRight' ||
+        e.metaKey ||
+        (e.altKey && code === 'Space') || // Windows Search / PowerToys
+        (e.ctrlKey && key === 'Escape'); // Start Menu
 
-      // 3. General forbidden key combinations
+      // 3. Function Keys (F1 through F12)
+      const isFunctionKey = /^F(1[0-2]|[1-9])$/i.test(key) || /^F(1[0-2]|[1-9])$/i.test(code);
+
+      // 4. General forbidden key combinations
       const isForbiddenShortcut =
         (e.ctrlKey && ['c', 'v', 'x', 'u', 'a', 't', 'p'].includes(lowerKey)) ||
         (e.ctrlKey && e.shiftKey && ['i', 'j', 'c'].includes(lowerKey)) ||
-        key === 'F12' ||
         (e.altKey && key === 'Tab') ||
         (e.altKey && key === 'F4') ||
         key === 'PrintScreen';
 
-      if (isCalculatorKey || isSystemLauncher || isForbiddenShortcut) {
+      if (isCalculatorKey || isWindowsOrMetaKey || isFunctionKey || isForbiddenShortcut) {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
 
         if (isCalculatorKey) {
-          triggerWarning('System Calculator Key Blocked! Please use the in-app calculator.');
-        } else if (isSystemLauncher) {
-          triggerWarning('System App Launcher / OS Key Blocked!');
+          triggerWarning('System Calculator Key Blocked!');
+        } else if (isWindowsOrMetaKey) {
+          triggerWarning('Windows / System OS Key Blocked!');
+        } else if (isFunctionKey) {
+          triggerWarning(`Function Key (${key || code}) Blocked!`);
         }
       }
     };

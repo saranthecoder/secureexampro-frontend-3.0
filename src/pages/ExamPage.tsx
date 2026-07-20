@@ -73,47 +73,7 @@ const ExamPage = () => {
   const [offlineSyncPending, setOfflineSyncPending] = useState(false);
   const [isTerminatedByAdmin, setIsTerminatedByAdmin] = useState(false);
 
-  // Safe On-Screen Calculator states
-  const [showCalculator, setShowCalculator] = useState(false);
-  const [calcDisplay, setCalcDisplay] = useState("0");
 
-  const handleCalcClick = (val: string) => {
-    setCalcDisplay((prev) => {
-      if (val === "C") return "0";
-      if (val === "CE") {
-        return prev.length > 1 ? prev.slice(0, -1) : "0";
-      }
-      if (val === "=") {
-        try {
-          const sanitized = prev.replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-");
-          const result = Function(`"use strict"; return (${sanitized})`)();
-          return String(Number(result.toFixed(8)));
-        } catch {
-          return "Error";
-        }
-      }
-      if (val === "√") {
-        try {
-          const num = Number(prev);
-          return String(Math.sqrt(num));
-        } catch {
-          return "Error";
-        }
-      }
-      if (val === "x²") {
-        try {
-          const num = Number(prev);
-          return String(num * num);
-        } catch {
-          return "Error";
-        }
-      }
-      if (prev === "0" || prev === "Error") {
-        return val;
-      }
-      return prev + val;
-    });
-  };
 
   // =======================
   // 🔐 SECURITY HOOK (Tab switches & Fullscreen, max warnings: 3)
@@ -129,7 +89,16 @@ const ExamPage = () => {
     isFullscreen,
   } = useExamSecurity({
     enabled: started && !submitted,
-    maxWarnings: 9999,
+    maxWarnings: exam?.maxTabSwitches || 3,
+    onDisqualify: (count) => {
+      Swal.fire({
+        title: "Exam Auto-Terminated",
+        text: `You exceeded the maximum allowed tab switch / focus warnings (${count}). Your exam has been auto-submitted.`,
+        icon: "error",
+        confirmButtonColor: "#ef4444"
+      });
+      submitExam(count, faceWarningCount, true);
+    }
   });
 
   // Callback ref to bind webcam stream immediately upon element mount/remount
@@ -540,18 +509,35 @@ const ExamPage = () => {
   }, [screenStream, started, submitted, screenShareRequired]);
 
   // ==========================================
-  // 🖥️ Fullscreen Exit Warnings
+  // 🖥️ Fullscreen Exit Warnings & Threshold Termination
   // ==========================================
   const fullscreenRequired = !!(exam?.trackFullScreenExit !== false && (exam?.aiProctorActive ? exam.trackFullScreenExit : true));
-  const prevIsFullscreen = useRef(true);
+  const maxFullscreenExits = exam?.maxFullScreenExits || 3;
+  const prevIsFullscreen = useRef(false);
+  const hasEnteredFullscreenOnce = useRef(false);
 
   useEffect(() => {
     if (!started || submitted || !fullscreenRequired) return;
-    if (prevIsFullscreen.current && !isFullscreen) {
-      setFullScreenExitCount((prev) => prev + 1);
+
+    if (isFullscreen) {
+      hasEnteredFullscreenOnce.current = true;
+    } else if (hasEnteredFullscreenOnce.current && prevIsFullscreen.current && !isFullscreen) {
+      setFullScreenExitCount((prev) => {
+        const next = prev + 1;
+        if (next >= maxFullscreenExits) {
+          Swal.fire({
+            title: "Exam Auto-Terminated",
+            text: `You exited fullscreen ${next} times (Max allowed: ${maxFullscreenExits}). Your exam has been auto-submitted.`,
+            icon: "error",
+            confirmButtonColor: "#ef4444"
+          });
+          submitExam(tabSwitchCount, faceWarningCount, true);
+        }
+        return next;
+      });
     }
     prevIsFullscreen.current = isFullscreen;
-  }, [isFullscreen, started, submitted, fullscreenRequired]);
+  }, [isFullscreen, started, submitted, fullscreenRequired, maxFullscreenExits, tabSwitchCount, faceWarningCount]);
 
   // Lobby face verification effect
   useEffect(() => {
@@ -1891,87 +1877,7 @@ const ExamPage = () => {
         </div>
       )}
 
-      {/* SAFE ON-SCREEN CALCULATOR FLOATING PANEL */}
-      {started && !submitted && showCalculator && (
-        <div className="fixed bottom-6 right-6 z-[999] bg-slate-900 border border-slate-700 text-white rounded-2xl shadow-2xl p-4 w-72 backdrop-blur-md font-mono select-none animate-in fade-in slide-in-from-bottom-5">
-          <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider">
-              <Calculator className="h-4 w-4 text-blue-400" />
-              <span>Exam Calculator</span>
-            </div>
-            <button
-              onClick={() => setShowCalculator(false)}
-              className="text-slate-400 hover:text-white transition-colors p-1 rounded-md hover:bg-slate-800"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
 
-          {/* Calculator Display */}
-          <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 mb-3 text-right">
-            <div className="text-xl font-bold text-emerald-400 tracking-wider truncate">
-              {calcDisplay}
-            </div>
-          </div>
-
-          {/* Calculator Grid Buttons */}
-          <div className="grid grid-cols-4 gap-2 text-xs font-bold">
-            {["C", "CE", "√", "÷"].map((btn) => (
-              <button
-                key={btn}
-                onClick={() => handleCalcClick(btn)}
-                className="py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg transition-all active:scale-95"
-              >
-                {btn}
-              </button>
-            ))}
-            {["7", "8", "9", "×"].map((btn) => (
-              <button
-                key={btn}
-                onClick={() => handleCalcClick(btn)}
-                className={`py-2.5 rounded-lg transition-all active:scale-95 ${
-                  btn === "×" ? "bg-slate-800 hover:bg-slate-700 text-blue-400" : "bg-slate-800/60 hover:bg-slate-800 text-slate-200"
-                }`}
-              >
-                {btn}
-              </button>
-            ))}
-            {["4", "5", "6", "−"].map((btn) => (
-              <button
-                key={btn}
-                onClick={() => handleCalcClick(btn)}
-                className={`py-2.5 rounded-lg transition-all active:scale-95 ${
-                  btn === "−" ? "bg-slate-800 hover:bg-slate-700 text-blue-400" : "bg-slate-800/60 hover:bg-slate-800 text-slate-200"
-                }`}
-              >
-                {btn}
-              </button>
-            ))}
-            {["1", "2", "3", "+"].map((btn) => (
-              <button
-                key={btn}
-                onClick={() => handleCalcClick(btn)}
-                className={`py-2.5 rounded-lg transition-all active:scale-95 ${
-                  btn === "+" ? "bg-slate-800 hover:bg-slate-700 text-blue-400" : "bg-slate-800/60 hover:bg-slate-800 text-slate-200"
-                }`}
-              >
-                {btn}
-              </button>
-            ))}
-            {["0", ".", "x²", "="].map((btn) => (
-              <button
-                key={btn}
-                onClick={() => handleCalcClick(btn)}
-                className={`py-2.5 rounded-lg transition-all active:scale-95 ${
-                  btn === "=" ? "bg-blue-600 hover:bg-blue-700 text-white font-black" : "bg-slate-800/60 hover:bg-slate-800 text-slate-200"
-                }`}
-              >
-                {btn}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
 
 
@@ -2052,20 +1958,7 @@ const ExamPage = () => {
             Time Left: <span className="font-mono">{timer.formatted}</span>
           </div>
 
-          {/* CALCULATOR TOGGLE BUTTON */}
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => setShowCalculator((prev) => !prev)}
-            className={`font-semibold text-xs py-1.5 h-auto flex items-center gap-1.5 border transition-all ${
-              showCalculator
-                ? "bg-amber-500 hover:bg-amber-600 text-white border-amber-400"
-                : "bg-white/10 hover:bg-white/20 text-white border-white/20"
-            }`}
-          >
-            <Calculator className="h-4 w-4" />
-            <span>Calculator</span>
-          </Button>
+
 
           {/* SUBMIT */}
           <Button

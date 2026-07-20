@@ -138,6 +138,8 @@ const AdminDashboard = () => {
   const [proctorTab, setProctorTab] = useState(true);
   const [proctorFS, setProctorFS] = useState(true);
   const [proctorNet, setProctorNet] = useState(true);
+  const [maxTabSwitches, setMaxTabSwitches] = useState(3);
+  const [maxFullScreenExits, setMaxFullScreenExits] = useState(3);
   const [resultsDispatch, setResultsDispatch] = useState("none");
   const [savingConfig, setSavingConfig] = useState(false);
 
@@ -152,6 +154,8 @@ const AdminDashboard = () => {
       setProctorTab(selected.trackTabSwitches !== false);
       setProctorFS(selected.trackFullScreenExit !== false);
       setProctorNet(selected.trackInternetIssues !== false);
+      setMaxTabSwitches(selected.maxTabSwitches || 3);
+      setMaxFullScreenExits(selected.maxFullScreenExits || 3);
       setResultsDispatch(selected.dispatchPolicy || "none");
     } else {
       setProctorActive(false);
@@ -161,6 +165,8 @@ const AdminDashboard = () => {
       setProctorTab(true);
       setProctorFS(true);
       setProctorNet(true);
+      setMaxTabSwitches(3);
+      setMaxFullScreenExits(3);
       setResultsDispatch("none");
     }
   };
@@ -182,6 +188,8 @@ const AdminDashboard = () => {
           trackTabSwitches: proctorTab,
           trackFullScreenExit: proctorFS,
           trackInternetIssues: proctorNet,
+          maxTabSwitches,
+          maxFullScreenExits,
           dispatchPolicy: resultsDispatch,
         }),
       });
@@ -2970,10 +2978,41 @@ const AdminDashboard = () => {
                               <span className="text-[11px] font-bold text-slate-750 block">Track Network Offline Interruptions</span>
                               <span className="text-[9px] text-slate-400 font-medium">Detect browser connection dropouts and log network offline periods in the scorecard.</span>
                             </div>
-                      </label>
+                          </label>
+
+                          {/* Warning Limit Controls */}
+                            <div className="pt-3 border-t border-slate-200 space-y-2.5">
+                              <h4 className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider">Termination Threshold Limits</h4>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-600 block">Max Tab Switch Warnings</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="20"
+                                    value={maxTabSwitches}
+                                    onChange={(e) => setMaxTabSwitches(parseInt(e.target.value) || 1)}
+                                    className="w-full text-xs font-bold px-2 py-1.5 border border-slate-300 rounded-lg bg-slate-50 text-slate-800 focus:bg-white focus:ring-1 focus:ring-blue-500"
+                                  />
+                                  <span className="text-[9px] text-slate-400 block leading-tight">Exceeding this count auto-terminates &amp; submits test.</span>
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-600 block">Max Fullscreen Exit Warnings</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="20"
+                                    value={maxFullScreenExits}
+                                    onChange={(e) => setMaxFullScreenExits(parseInt(e.target.value) || 1)}
+                                    className="w-full text-xs font-bold px-2 py-1.5 border border-slate-300 rounded-lg bg-slate-50 text-slate-800 focus:bg-white focus:ring-1 focus:ring-blue-500"
+                                  />
+                                  <span className="text-[9px] text-slate-400 block leading-tight">Exceeding this count auto-terminates &amp; submits test.</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
                     {/* Email Dispatch Option */}
                     <div className="p-4 bg-slate-50 border rounded-xl space-y-2 text-left">
