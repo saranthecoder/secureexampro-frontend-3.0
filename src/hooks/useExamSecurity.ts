@@ -18,6 +18,7 @@ export const useExamSecurity = ({
   const [showWarning, setShowWarning] = useState(false);
   const [warningMessage, setWarningMessage] = useState('');
   const warningCountRef = useRef(0);
+  const lastBlurTimeRef = useRef(0);
 
   const triggerWarning = useCallback(
     (message: string) => {
@@ -54,17 +55,54 @@ export const useExamSecurity = ({
       e.preventDefault();
     };
 
-    // Disable keyboard shortcuts
+    // Trap & Block System Keyboards, Calculator Buttons & Forbidden Shortcuts
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        (e.ctrlKey && ['c', 'v', 'x', 'u', 'a', 't', 'p'].includes(e.key.toLowerCase())) ||
-        (e.ctrlKey && e.shiftKey && ['i', 'j', 'c'].includes(e.key.toLowerCase())) ||
-        e.key === 'F12' ||
-        (e.altKey && e.key === 'Tab') ||
-        e.key === 'PrintScreen'
-      ) {
+      const key = e.key;
+      const code = e.code;
+      const lowerKey = key ? key.toLowerCase() : '';
+
+      // 1. Dedicated Hardware Calculator Keys (Windows, Mac, Linux keyboards)
+      const isCalculatorKey =
+        key === 'LaunchCalculator' ||
+        code === 'LaunchCalculator' ||
+        key === 'Calculator' ||
+        code === 'Calculator' ||
+        code === 'KeyCalculator' ||
+        key === 'LaunchApp2' ||
+        code === 'LaunchApp2' ||
+        key === 'Calc' ||
+        code === 'Calc';
+
+      // 2. OS App Launchers & System Shortcuts (Meta/Win key, Spotlight, Run)
+      const isSystemLauncher =
+        key === 'Meta' ||
+        key === 'OS' ||
+        code === 'MetaLeft' ||
+        code === 'MetaRight' ||
+        (e.metaKey && code === 'Space') || // Mac Spotlight
+        (e.altKey && code === 'Space') ||  // Windows PowerToys / Search
+        (e.metaKey && lowerKey === 'r') ||   // Run dialog
+        (e.ctrlKey && key === 'Escape');    // Start Menu
+
+      // 3. General forbidden key combinations
+      const isForbiddenShortcut =
+        (e.ctrlKey && ['c', 'v', 'x', 'u', 'a', 't', 'p'].includes(lowerKey)) ||
+        (e.ctrlKey && e.shiftKey && ['i', 'j', 'c'].includes(lowerKey)) ||
+        key === 'F12' ||
+        (e.altKey && key === 'Tab') ||
+        (e.altKey && key === 'F4') ||
+        key === 'PrintScreen';
+
+      if (isCalculatorKey || isSystemLauncher || isForbiddenShortcut) {
         e.preventDefault();
         e.stopPropagation();
+        e.stopImmediatePropagation();
+
+        if (isCalculatorKey) {
+          triggerWarning('System Calculator Key Blocked! Please use the in-app calculator.');
+        } else if (isSystemLauncher) {
+          triggerWarning('System App Launcher / OS Key Blocked!');
+        }
       }
     };
 
@@ -76,7 +114,20 @@ export const useExamSecurity = ({
     // Detect tab switching
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        triggerWarning('Tab switch detected!');
+        const now = Date.now();
+        if (now - lastBlurTimeRef.current > 1500) {
+          lastBlurTimeRef.current = now;
+          triggerWarning('Tab switch / background app detected!');
+        }
+      }
+    };
+
+    // Detect focus loss to external applications (e.g. System Calculator)
+    const handleWindowBlur = () => {
+      const now = Date.now();
+      if (now - lastBlurTimeRef.current > 1500) {
+        lastBlurTimeRef.current = now;
+        triggerWarning('Focus lost to external application (e.g. System Calculator)!');
       }
     };
 
@@ -97,21 +148,25 @@ export const useExamSecurity = ({
 
     document.addEventListener('contextmenu', handleContextMenu);
     document.addEventListener('keydown', handleKeyDown, true);
+    document.addEventListener('keyup', handleKeyDown, true);
     document.addEventListener('copy', handleCopy);
     document.addEventListener('paste', handlePaste);
     document.addEventListener('cut', handleCut);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
+    window.addEventListener('blur', handleWindowBlur);
     window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
       document.removeEventListener('contextmenu', handleContextMenu);
       document.removeEventListener('keydown', handleKeyDown, true);
+      document.removeEventListener('keyup', handleKeyDown, true);
       document.removeEventListener('copy', handleCopy);
       document.removeEventListener('paste', handlePaste);
       document.removeEventListener('cut', handleCut);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [enabled, triggerWarning]);
