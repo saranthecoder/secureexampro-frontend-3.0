@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Shield, LogOut, Laptop, Wifi, Video, CheckCircle2, FileText, Play } from "lucide-react";
 
 import BASE_URL from "@/config/api";
+import Loader from "@/components/Loader";
 
 const StudentDashboard = () => {
   const { user, logout } = useAuth();
@@ -76,7 +77,9 @@ const StudentDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans flex flex-col justify-between">
+    <>
+      {loading && <Loader />}
+      <div className="min-h-screen bg-slate-50 font-sans flex flex-col justify-between">
       
       {/* ================= HEADER ================= */}
       <header className="border-b border-slate-200 bg-white sticky top-0 z-50">
@@ -220,6 +223,7 @@ const StudentDashboard = () => {
         </div>
       </footer>
     </div>
+    </>
   );
 };
 

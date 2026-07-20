@@ -6,6 +6,8 @@ import { useExamTimer } from "@/hooks/useExamTimer";
 import { Button } from "@/components/ui/button";
 import Loader from "@/components/Loader";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 import {
   AlertTriangle,
@@ -21,7 +23,9 @@ import {
   Check,
   AlertCircle,
   HelpCircle,
-  Play
+  Play,
+  WifiOff,
+  FileText
 } from "lucide-react";
 import BASE_URL from "@/config/api";
 
@@ -67,6 +71,23 @@ const ExamPage = () => {
   const [offlineSyncPending, setOfflineSyncPending] = useState(false);
   const [isTerminatedByAdmin, setIsTerminatedByAdmin] = useState(false);
 
+  // =======================
+  // 🔐 SECURITY HOOK (Tab switches & Fullscreen, max warnings: 3)
+  // =======================
+  const {
+    tabSwitchCount,
+    showWarning,
+    warningMessage,
+    dismissWarning,
+    triggerWarning,
+    enterFullscreen,
+    exitFullscreen,
+    isFullscreen,
+  } = useExamSecurity({
+    enabled: started && !submitted,
+    maxWarnings: 9999,
+  });
+
   // Callback ref to bind webcam stream immediately upon element mount/remount
   const setVideoRef = useCallback((node: HTMLVideoElement | null) => {
     videoRef.current = node;
@@ -109,8 +130,6 @@ const ExamPage = () => {
         return;
       }
 
-      // Force cameraMonitor to false
-      data.cameraMonitor = false;
 
       // Check if not started yet (Lobby flow)
       if (data.notStartedYet) {
@@ -168,13 +187,13 @@ const ExamPage = () => {
       const finalSections = sectionNames.map((name) => {
         const shuffledSectionQuestions = shuffleArray(grouped[name]).map(
           (q: any) => {
-            const optionsArray = Object.entries(q.options).map(
-              ([key, value]) => ({
+            const optionsArray = q.options ? Object.entries(q.options)
+              .filter(([_, val]: any) => val !== undefined && val !== null && val.toString().trim() !== "")
+              .map(([key, value]) => ({
                 key,
                 value,
-              }),
-            );
-            const shuffledOptions = shuffleArray(optionsArray);
+              })) : [];
+            const shuffledOptions = optionsArray.length > 0 ? shuffleArray(optionsArray) : [];
             return { ...q, shuffledOptions };
           },
         );
@@ -278,18 +297,31 @@ const ExamPage = () => {
   const [showFaceWarningModal, setShowFaceWarningModal] = useState(false);
   const [faceWarningMessage, setFaceWarningMessage] = useState("");
 
+  // Proctor monitoring warning states
+  const [noiseWarningCount, setNoiseWarningCount] = useState(0);
+  const [showNoiseWarningModal, setShowNoiseWarningModal] = useState(false);
+  const [noiseWarningMessage, setNoiseWarningMessage] = useState("");
+  const [internetIssueCount, setInternetIssueCount] = useState(0);
+  const [fullScreenExitCount, setFullScreenExitCount] = useState(0);
+  const [screenShareViolationCount, setScreenShareViolationCount] = useState(0);
+
 
   // Listen to network status change events
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
+    const handleOffline = () => {
+      setIsOnline(false);
+      if (started && !submitted && exam?.aiProctorActive && exam?.trackInternetIssues) {
+        setInternetIssueCount((prev) => prev + 1);
+      }
+    };
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, []);
+  }, [started, submitted, exam]);
 
   // Countdown timer loop
   useEffect(() => {
@@ -318,10 +350,18 @@ const ExamPage = () => {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // Start webcam stream when lobby is active and cameraMonitor is enabled
+  // Start media streams when lobby is active
   useEffect(() => {
-    if (!started && !submitted && exam?.cameraMonitor) {
-      navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } })
+    if (started || submitted || !exam) return;
+
+    const needsCam = !!(exam.cameraMonitor || (exam.aiProctorActive && exam.cameraMonitor));
+    const needsMic = !!(exam.aiProctorActive && exam.micMonitor);
+
+    if (needsCam || needsMic) {
+      navigator.mediaDevices.getUserMedia({
+        video: needsCam ? { width: 320, height: 240 } : false,
+        audio: needsMic || needsCam
+      })
         .then((s) => {
           setStream(s);
           if (videoRef.current) {
@@ -329,16 +369,16 @@ const ExamPage = () => {
           }
         })
         .catch((err) => {
-          console.error("Camera access denied:", err);
+          console.error("Camera/Mic access denied:", err);
           Swal.fire({
-            title: "Camera Access Required",
-            text: "This exam requires camera permissions. Please grant camera access to write the exam.",
+            title: "Hardware Access Required",
+            text: `This exam requires ${needsCam ? "Camera" : ""} ${needsCam && needsMic ? "and" : ""} ${needsMic ? "Microphone" : ""} permissions. Please grant access in your browser settings.`,
             icon: "warning",
             confirmButtonColor: "#3b82f6"
           });
         });
     }
-  }, [exam?.cameraMonitor, started, submitted]);
+  }, [exam, started, submitted]);
 
   // Bind camera stream to video element when available
   useEffect(() => {
@@ -373,6 +413,102 @@ const ExamPage = () => {
       setScreenShared(false);
     }
   }, [submitted, screenStream]);
+
+  // ==========================================
+  // 🔊 Web Audio API Microphone Noise Analyser
+  // ==========================================
+  useEffect(() => {
+    const runMicAnalysis = !!(exam?.aiProctorActive && exam?.micMonitor && started && !submitted && stream);
+    if (!runMicAnalysis) return;
+
+    let audioContext: AudioContext | null = null;
+    let analyser: AnalyserNode | null = null;
+    let source: MediaStreamAudioSourceNode | null = null;
+    let animationFrameId: number;
+    let noiseSpikeDuration = 0; // tracks continuous sound in ms
+
+    try {
+      audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const checkAudioLevel = () => {
+        if (!analyser) return;
+        analyser.getByteFrequencyData(dataArray);
+
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i];
+        }
+        const average = sum / bufferLength;
+        const normalizedVal = average / 255;
+
+        // Decibel spikes detection (continuous noise threshold: > 0.15 for 2s)
+        if (normalizedVal > 0.15) {
+          noiseSpikeDuration += 100;
+          if (noiseSpikeDuration >= 2000) {
+            noiseSpikeDuration = 0; // reset
+            setNoiseWarningCount((prev) => {
+              const next = prev + 1;
+              setNoiseWarningMessage(`Ambient noise detected! Please keep quiet. (Warning ${next})`);
+              setShowNoiseWarningModal(true);
+              return next;
+            });
+          }
+        } else {
+          noiseSpikeDuration = Math.max(0, noiseSpikeDuration - 100);
+        }
+
+        setTimeout(() => {
+          animationFrameId = requestAnimationFrame(checkAudioLevel);
+        }, 100);
+      };
+
+      checkAudioLevel();
+    } catch (err) {
+      console.error("Failed to start Audio Analyser:", err);
+    }
+
+    return () => {
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+      if (source) source.disconnect();
+      if (audioContext && audioContext.state !== "closed") audioContext.close();
+    };
+  }, [exam?.aiProctorActive, exam?.micMonitor, started, submitted, stream]);
+
+  // ==========================================
+  // 💻 Screen Share Disconnection Warnings
+  // ==========================================
+  const screenShareRequired = !!(exam?.screenShareMonitor || (exam?.aiProctorActive && exam?.screenShareMonitor));
+  const cameraRequired = !!(exam?.cameraMonitor || (exam?.aiProctorActive && exam?.cameraMonitor));
+  const prevScreenStream = useRef<any>(null);
+
+  useEffect(() => {
+    if (!started || submitted || !screenShareRequired) return;
+    if (prevScreenStream.current && !screenStream) {
+      setScreenShareViolationCount((prev) => prev + 1);
+    }
+    prevScreenStream.current = screenStream;
+  }, [screenStream, started, submitted, screenShareRequired]);
+
+  // ==========================================
+  // 🖥️ Fullscreen Exit Warnings
+  // ==========================================
+  const fullscreenRequired = !!(exam?.trackFullScreenExit !== false && (exam?.aiProctorActive ? exam.trackFullScreenExit : true));
+  const prevIsFullscreen = useRef(true);
+
+  useEffect(() => {
+    if (!started || submitted || !fullscreenRequired) return;
+    if (prevIsFullscreen.current && !isFullscreen) {
+      setFullScreenExitCount((prev) => prev + 1);
+    }
+    prevIsFullscreen.current = isFullscreen;
+  }, [isFullscreen, started, submitted, fullscreenRequired]);
 
   // Lobby face verification effect
   useEffect(() => {
@@ -534,12 +670,17 @@ const ExamPage = () => {
     const payload = {
       studentName: parsedUser.name,
       studentEmail: parsedUser.email,
+      studentRollNumber: parsedUser.rollNumber || "",
       answers,
-      terminated: finalTabSwitchCount >= 3 || faceTurnTerminated || isTerminatedByAdmin,
+      terminated: isTerminatedByAdmin,
       tabSwitch: finalTabSwitchCount > 0,
       tabSwitchCount: finalTabSwitchCount,
       faceWarningCount: finalFaceWarningCount,
-      faceTurnTerminated: faceTurnTerminated,
+      noiseWarningCount: noiseWarningCount,
+      internetIssueCount: internetIssueCount,
+      fullScreenExitCount: fullScreenExitCount,
+      screenShareViolationCount: screenShareViolationCount,
+      faceTurnTerminated: false,
       terminatedByAdmin: isTerminatedByAdmin,
     };
 
@@ -606,39 +747,17 @@ const ExamPage = () => {
     }
   };
 
-  // =======================
-  // 🔐 SECURITY HOOK (Tab switches & Fullscreen, max warnings: 3)
-  // =======================
+  // Security Hook variables are defined at the top of the component body to avoid temporal dead zone (TDZ) reference errors.
 
-  const {
-    tabSwitchCount,
-    showWarning,
-    warningMessage,
-    dismissWarning,
-    triggerWarning,
-    enterFullscreen,
-    exitFullscreen,
-    isFullscreen,
-  } = useExamSecurity({
-    enabled: started && !submitted,
-    maxWarnings: 3,
-    onDisqualify: (count: number) => submitExam(count, faceWarningCount, false),
-  });
-
-  // AI Face turning warning handler (max warnings: 5)
+  // AI Face turning warning handler (No auto-disqualify, logged for analysis)
   const handleFaceWarning = useCallback(() => {
     setFaceWarningCount((prev) => {
       const nextCount = prev + 1;
-      if (nextCount >= 5) {
-        setFaceWarningMessage("Head turn limit exceeded! auto-submitting...");
-        submitExam(tabSwitchCount, nextCount, true);
-      } else {
-        setFaceWarningMessage(`Head turn detected! Please look straight at the screen. (Warning ${nextCount}/5)`);
-        setShowFaceWarningModal(true);
-      }
+      setFaceWarningMessage(`Head turn detected! Please look straight at the screen. (Warning ${nextCount})`);
+      setShowFaceWarningModal(true);
       return nextCount;
     });
-  }, [tabSwitchCount, faceWarningCount]);
+  }, []);
 
   const handleAdminTermination = useCallback(() => {
     if (isTerminatedByAdmin) return;
@@ -739,6 +858,15 @@ const ExamPage = () => {
     }
   }, [handleFaceWarning]);
 
+  // Periodic face analysis loop during active proctored exam
+  useEffect(() => {
+    if (!started || submitted || !cameraRequired || !stream) return;
+    const interval = setInterval(() => {
+      captureFrameAndAnalyze();
+    }, 500);
+    return () => clearInterval(interval);
+  }, [started, submitted, cameraRequired, stream, captureFrameAndAnalyze]);
+
   // Run active candidate heartbeat loop during the exam (and poll for admin termination status)
   useEffect(() => {
     if (!started || submitted || isTerminatedByAdmin) return;
@@ -753,7 +881,15 @@ const ExamPage = () => {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ name: parsedUser.name }),
+          body: JSON.stringify({
+            name: parsedUser.name,
+            faceWarningCount,
+            noiseWarningCount,
+            tabSwitchCount,
+            fullScreenExitCount,
+            internetIssueCount,
+            screenShareViolationCount
+          }),
         });
         const data = await res.json();
         if (data && data.terminated) {
@@ -768,7 +904,19 @@ const ExamPage = () => {
     const intervalId = setInterval(sendHeartbeat, 5000);
 
     return () => clearInterval(intervalId);
-  }, [started, submitted, isTerminatedByAdmin, exam?.examCode, handleAdminTermination]);
+  }, [
+    started,
+    submitted,
+    isTerminatedByAdmin,
+    exam?.examCode,
+    handleAdminTermination,
+    faceWarningCount,
+    noiseWarningCount,
+    tabSwitchCount,
+    fullScreenExitCount,
+    internetIssueCount,
+    screenShareViolationCount
+  ]);
 
   const duration = exam?.duration ?? 0;
 
@@ -799,8 +947,8 @@ const ExamPage = () => {
 
     if (exam?.cameraMonitor && !stream) {
       Swal.fire({
-        title: "Camera Perms Required",
-        text: "Camera stream is required. Please grant camera permission to start.",
+        title: "Camera Permission Required",
+        text: "Camera stream is required for this assessment. Please grant camera permission in your browser settings and reload the page.",
         icon: "warning",
         confirmButtonColor: "#3b82f6"
       });
@@ -809,6 +957,28 @@ const ExamPage = () => {
 
     if (exam?.cameraMonitor && !faceRecognized) {
       setShowFaceErrorPopup(true);
+      return;
+    }
+
+    // 🎤 Microphone permission enforcement
+    if (exam?.aiProctorActive && exam?.micMonitor && !stream) {
+      Swal.fire({
+        title: "Microphone Permission Required",
+        text: "Microphone access is required for this assessment. Please grant microphone permission in your browser settings and reload the page.",
+        icon: "warning",
+        confirmButtonColor: "#3b82f6"
+      });
+      return;
+    }
+
+    // 🖥️ Screen share enforcement
+    if (exam?.aiProctorActive && exam?.screenShareMonitor && !screenShared) {
+      Swal.fire({
+        title: "Screen Share Required",
+        text: "You must share your entire screen before starting the exam.",
+        icon: "warning",
+        confirmButtonColor: "#3b82f6"
+      });
       return;
     }
 
@@ -834,8 +1004,6 @@ const ExamPage = () => {
         return;
       }
 
-      // Force cameraMonitor to false
-      data.cameraMonitor = false;
 
       // 🔀 Group & Shuffle Questions by Section
       const predefinedOrder = [
@@ -871,13 +1039,13 @@ const ExamPage = () => {
       const finalSections = sectionNames.map((name) => {
         const shuffledSectionQuestions = shuffleArray(grouped[name]).map(
           (q: any) => {
-            const optionsArray = Object.entries(q.options).map(
-              ([key, value]) => ({
+            const optionsArray = q.options ? Object.entries(q.options)
+              .filter(([_, val]: any) => val !== undefined && val !== null && val.toString().trim() !== "")
+              .map(([key, value]) => ({
                 key,
                 value,
-              }),
-            );
-            const shuffledOptions = shuffleArray(optionsArray);
+              })) : [];
+            const shuffledOptions = optionsArray.length > 0 ? shuffleArray(optionsArray) : [];
             return { ...q, shuffledOptions };
           },
         );
@@ -906,6 +1074,7 @@ const ExamPage = () => {
           const initialAnswers = allQuestions.map((q: any) => ({
             questionId: q._id,
             selectedOption: null,
+            timeSpent: 0,
           }));
           setAnswers(initialAnswers);
         }
@@ -913,6 +1082,7 @@ const ExamPage = () => {
         const initialAnswers = allQuestions.map((q: any) => ({
           questionId: q._id,
           selectedOption: null,
+          timeSpent: 0,
         }));
         setAnswers(initialAnswers);
       }
@@ -966,12 +1136,56 @@ const ExamPage = () => {
     );
   };
 
+  const updateAnswer = (questionId: string, value: string | null) => {
+    setAnswers((prev) =>
+      prev.map((a) => {
+        if (a.questionId !== questionId) return a;
+        return { ...a, selectedOption: value === "" ? null : value };
+      })
+    );
+  };
   const currentSection = sections[currentSectionIndex];
   const currentSectionQuestions = currentSection?.questions || [];
   const currentQuestion = currentSectionQuestions[currentQuestionIndex];
+
+  useEffect(() => {
+    if (!started || submitted || !currentQuestion) return;
+
+    const interval = setInterval(() => {
+      setAnswers((prev) =>
+        prev.map((a) => {
+          if (a.questionId !== currentQuestion._id) return a;
+          return { ...a, timeSpent: (a.timeSpent || 0) + 1 };
+        })
+      );
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [started, submitted, currentQuestion?._id]);
+
   const totalQuestions = useMemo(() => {
     return sections.reduce((sum, sec) => sum + sec.questions.length, 0);
   }, [sections]);
+
+  const totalMarks = useMemo(() => {
+    if (!exam || !exam.questions) return 0;
+    return exam.questions.reduce((sum: number, q: any) => sum + (q.marks || 1), 0);
+  }, [exam]);
+
+  const questionTypesCount = useMemo(() => {
+    if (!exam || !exam.questions) return { MCQ: 0, MSQ: 0, FIB: 0, NUM: 0, DES: 0 };
+    const counts = { MCQ: 0, MSQ: 0, FIB: 0, NUM: 0, DES: 0 };
+    exam.questions.forEach((q: any) => {
+      const type = q.questionType || (q.isMultipleCorrect ? "MSQ" : "MCQ");
+      if (type in counts) {
+        counts[type as keyof typeof counts]++;
+      } else {
+        counts.MCQ++;
+      }
+    });
+    return counts;
+  }, [exam]);
+
   const answeredCount = answers.filter((a) => a.selectedOption).length;
 
   const parsedUser = useMemo(() => {
@@ -1074,6 +1288,66 @@ const ExamPage = () => {
     const hasNegativeMarking = !!(exam?.hasNegativeMarking || exam.questions?.some((q: any) => (q.negativeMarks || 0) > 0));
     const maxNegativeMark = exam?.maxNegativeMark || exam.questions?.reduce((max: number, q: any) => Math.max(max, q.negativeMarks || 0), 0) || 0;
 
+    // Define the dynamic CTA button config
+    const buttonConfig = (() => {
+      if (isWaiting) {
+        return {
+          text: "Lobby Timer Active...",
+          disabled: true,
+          className: "bg-slate-200 text-slate-400 cursor-not-allowed hover:bg-slate-200",
+          onClick: () => {}
+        };
+      }
+      
+      // 1. Camera stream missing
+      if (cameraRequired && (!stream || stream.getVideoTracks().length === 0)) {
+        return {
+          text: "Awaiting Camera Access...",
+          disabled: true,
+          className: "bg-slate-100 text-slate-450 border border-slate-200 cursor-not-allowed hover:bg-slate-100",
+          onClick: () => {}
+        };
+      }
+      
+      // 2. Identity not recognized
+      if (cameraRequired && !faceRecognized) {
+        return {
+          text: "Awaiting Identity Recognition Check",
+          disabled: true,
+          className: "bg-slate-100 text-slate-450 border border-slate-200 cursor-not-allowed hover:bg-slate-100",
+          onClick: () => {}
+        };
+      }
+
+      // 3. Microphone stream missing
+      if (exam?.aiProctorActive && exam?.micMonitor && (!stream || stream.getAudioTracks().length === 0)) {
+        return {
+          text: "Awaiting Microphone Access...",
+          disabled: true,
+          className: "bg-slate-100 text-slate-450 border border-slate-200 cursor-not-allowed hover:bg-slate-100",
+          onClick: () => {}
+        };
+      }
+
+      // 4. Screen share missing
+      if (screenShareRequired && !screenShared) {
+        return {
+          text: "Step 2: Share Entire Screen",
+          disabled: false,
+          className: "bg-amber-600 hover:bg-amber-700 text-white cursor-pointer shadow-lg animate-pulse",
+          onClick: handleShareScreen
+        };
+      }
+
+      // 5. Ready to start
+      return {
+        text: "Enter Examination Fullscreen",
+        disabled: false,
+        className: "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer shadow-lg hover:shadow-blue-500/25",
+        onClick: handleStart
+      };
+    })();
+
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 md:p-8 font-sans text-slate-800">
         {!isOnline && (
@@ -1166,15 +1440,61 @@ const ExamPage = () => {
               </p>
             </div>
 
-            {/* Shield Logo Graphic */}
-            <div className="relative z-10 w-full aspect-video rounded-xl bg-slate-900 border border-slate-800 overflow-hidden shadow-2xl flex flex-col items-center justify-center max-w-sm mx-auto p-4 space-y-2">
-              <Shield className="h-12 w-12 text-blue-500 animate-pulse" />
-              <div className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Secure Exam Portal</div>
-              <span className="text-[9px] text-slate-500 font-mono">Ver 2.1.0</span>
+            {/* Live Proctoring Preview */}
+            <div className="relative z-10 w-full aspect-video rounded-xl bg-slate-900 border border-slate-800 overflow-hidden shadow-2xl flex flex-col items-center justify-center max-w-sm mx-auto">
+              {cameraRequired && stream ? (
+                <>
+                  <video
+                    ref={setVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover scale-x-[-1]"
+                  />
+                  {/* Status Overlay Badges */}
+                  <div className="absolute bottom-3 left-3 right-3 flex flex-wrap gap-1.5 z-20">
+                    <span className="bg-slate-900/80 backdrop-blur-sm border border-slate-700/50 px-2 py-0.5 rounded text-[9px] font-bold text-emerald-400 flex items-center gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
+                      Cam Live
+                    </span>
+                    {exam?.aiProctorActive && exam?.micMonitor && stream.getAudioTracks().length > 0 && (
+                      <span className="bg-slate-900/80 backdrop-blur-sm border border-slate-700/50 px-2 py-0.5 rounded text-[9px] font-bold text-emerald-400 flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Mic Active
+                      </span>
+                    )}
+                    {screenShareRequired && screenShared && (
+                      <span className="bg-slate-900/80 backdrop-blur-sm border border-slate-700/50 px-2 py-0.5 rounded text-[9px] font-bold text-emerald-400 flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Screen Shared
+                      </span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center p-6 space-y-3 text-center w-full h-full">
+                  <Shield className="h-12 w-12 text-blue-500 animate-pulse" />
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-bold text-slate-350 uppercase tracking-widest">Active Channels Monitor</div>
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-1.5">
+                      {exam?.aiProctorActive && exam?.micMonitor && (
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${stream && stream.getAudioTracks().length > 0 ? "bg-emerald-950/40 text-emerald-400 border-emerald-800/30" : "bg-red-950/40 text-red-400 border-red-800/30"}`}>
+                          Mic: {stream && stream.getAudioTracks().length > 0 ? "Active" : "Awaiting"}
+                        </span>
+                      )}
+                      {screenShareRequired && (
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${screenShared ? "bg-emerald-950/40 text-emerald-400 border-emerald-800/30" : "bg-amber-955/40 text-amber-400 border-amber-800/30"}`}>
+                          Screen: {screenShared ? "Shared" : "Awaiting"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Checklist items */}
-            <div className="relative z-10 space-y-2 pt-2 border-t border-slate-900">
+            <div className="relative z-10 space-y-2 pt-2 border-t border-slate-900 w-full">
               <div className="flex items-center justify-between text-xs py-1 border-b border-slate-900/50">
                 <span className="text-slate-400 flex items-center gap-2">
                   <Check className="h-4 w-4 text-emerald-400" />
@@ -1189,13 +1509,59 @@ const ExamPage = () => {
                 </span>
                 <span className="text-slate-200 font-semibold">Enabled</span>
               </div>
-              <div className="flex items-center justify-between text-xs py-1">
+              <div className="flex items-center justify-between text-xs py-1 border-b border-slate-900/50">
                 <span className="text-slate-400 flex items-center gap-2">
                   <Check className={`h-4 w-4 ${isOnline ? "text-emerald-400" : "text-red-500"}`} />
                   Network Connection
                 </span>
                 <span className={`font-semibold ${isOnline ? "text-emerald-400" : "text-red-500"}`}>{isOnline ? "Online" : "Offline"}</span>
               </div>
+
+              {/* Dynamic Permissions Checklist */}
+              {cameraRequired && (
+                <div className="flex items-center justify-between text-xs py-1 border-b border-slate-900/50">
+                  <span className="text-slate-450 flex items-center gap-2">
+                    <Check className={`h-4 w-4 ${stream && stream.getVideoTracks().length > 0 ? "text-emerald-400" : "text-red-500"}`} />
+                    Webcam Permission
+                  </span>
+                  <span className={`font-semibold ${stream && stream.getVideoTracks().length > 0 ? "text-emerald-400" : "text-red-500"}`}>
+                    {stream && stream.getVideoTracks().length > 0 ? "Granted" : "Required"}
+                  </span>
+                </div>
+              )}
+              {cameraRequired && (
+                <div className="flex items-center justify-between text-xs py-1 border-b border-slate-900/50">
+                  <span className="text-slate-450 flex items-center gap-2">
+                    <Check className={`h-4 w-4 ${faceRecognized ? "text-emerald-400" : "text-amber-500"}`} />
+                    Identity Verification
+                  </span>
+                  <span className={`font-semibold ${faceRecognized ? "text-emerald-400" : "text-amber-500"}`}>
+                    {faceRecognized ? "Verified" : faceVerificationStatus === 'scanning' ? "Scanning..." : "Pending"}
+                  </span>
+                </div>
+              )}
+              {exam.aiProctorActive && exam.micMonitor && (
+                <div className="flex items-center justify-between text-xs py-1 border-b border-slate-900/50">
+                  <span className="text-slate-455 flex items-center gap-2">
+                    <Check className={`h-4 w-4 ${stream && stream.getAudioTracks().length > 0 ? "text-emerald-400" : "text-red-500"}`} />
+                    Microphone Input
+                  </span>
+                  <span className={`font-semibold ${stream && stream.getAudioTracks().length > 0 ? "text-emerald-400" : "text-red-500"}`}>
+                    {stream && stream.getAudioTracks().length > 0 ? "Active" : "Required"}
+                  </span>
+                </div>
+              )}
+              {screenShareRequired && (
+                <div className="flex items-center justify-between text-xs py-1">
+                  <span className="text-slate-455 flex items-center gap-2">
+                    <Check className={`h-4 w-4 ${screenShared ? "text-emerald-400" : "text-amber-500"}`} />
+                    Screen Share Access
+                  </span>
+                  <span className={`font-semibold ${screenShared ? "text-emerald-400" : "text-amber-500"}`}>
+                    {screenShared ? "Shared Entirely" : "Required"}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1243,14 +1609,36 @@ const ExamPage = () => {
               <h3 className="font-bold text-slate-900 text-sm">Rules & Pacing Guidelines</h3>
               <div className="grid gap-3 text-xs">
                 
+                {/* Dynamic Structure Card */}
                 <div className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl space-y-1">
                   <div className="font-bold text-slate-800 flex items-center gap-1.5">
-                    <Shield className="h-3.5 w-3.5 text-blue-600" />
-                    Proctoring Enforcements
+                    <FileText className="h-3.5 w-3.5 text-blue-600" />
+                    Question Paper Structure
                   </div>
                   <p className="text-slate-500 leading-relaxed text-[11px]">
-                    Do not exit fullscreen mode or switch browser tabs. Tab switches exceed 3 flags or head turns exceed 5 warnings will result in immediate **auto-submission**.
+                    This test contains <strong>{exam.questions?.length || 0} questions</strong> across <strong>{sections.length} sections</strong>, with a total weight of <strong>{totalMarks} marks</strong>:
                   </p>
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {questionTypesCount.MCQ > 0 && <span className="bg-white border border-slate-200 px-2 py-0.5 rounded text-[10px] font-bold text-slate-650">{questionTypesCount.MCQ} Single Option (MCQ)</span>}
+                    {questionTypesCount.MSQ > 0 && <span className="bg-white border border-slate-200 px-2 py-0.5 rounded text-[10px] font-bold text-slate-650">{questionTypesCount.MSQ} Multi-Correct (MSQ)</span>}
+                    {questionTypesCount.FIB > 0 && <span className="bg-white border border-slate-200 px-2 py-0.5 rounded text-[10px] font-bold text-slate-650">{questionTypesCount.FIB} Blanks (FIB)</span>}
+                    {questionTypesCount.NUM > 0 && <span className="bg-white border border-slate-200 px-2 py-0.5 rounded text-[10px] font-bold text-slate-650">{questionTypesCount.NUM} Numerical</span>}
+                    {questionTypesCount.DES > 0 && <span className="bg-white border border-slate-200 px-2 py-0.5 rounded text-[10px] font-bold text-slate-650">{questionTypesCount.DES} Descriptive</span>}
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl space-y-1.5">
+                  <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <Shield className="h-3.5 w-3.5 text-blue-600" />
+                    Active Proctoring Enforcements
+                  </div>
+                  <ul className="list-disc list-inside text-slate-500 leading-relaxed text-[11px] space-y-0.5 pl-0.5">
+                    {cameraRequired && <li>Camera connection is mandated (verification scanning & head-tracking).</li>}
+                    {screenShareRequired && <li>Display presentation sharing is mandated throughout.</li>}
+                    {exam.micMonitor && <li>Microphone capture is mandated (ambient noise analysis).</li>}
+                    {exam.trackTabSwitches !== false && <li>Tab switching logs warnings (exceeding flags auto-submits).</li>}
+                    {exam.trackFullScreenExit !== false && <li>Do not exit fullscreen. Exits trigger lockout blocks.</li>}
+                  </ul>
                 </div>
 
                 {hasNegativeMarking && (
@@ -1271,52 +1659,39 @@ const ExamPage = () => {
                     Forward-Only Sequential Navigation
                   </div>
                   <p className="text-slate-500 leading-relaxed text-[11px]">
-                    You can only progress forward. Backward navigation to previous questions is strictly disabled. Once a section is submitted, it is locked.
+                    You can only progress forward. Backward navigation to previous questions is disabled. Once a section is submitted, it is locked.
                   </p>
                 </div>
 
               </div>
 
               {/* Section Sequence Flowchart */}
-              <div className="space-y-2 pt-2">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block text-left">Drive Section Roadmap</span>
-                <div className="flex flex-wrap items-center gap-1 bg-slate-50 p-2.5 border border-slate-200/60 rounded-xl text-[10px] font-bold text-slate-500 justify-start">
-                  <span className="bg-blue-600 text-white px-2 py-0.5 rounded">Aptitude</span>
-                  <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-                  <span className="bg-blue-600 text-white px-2 py-0.5 rounded">Logical</span>
-                  <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-                  <span className="bg-blue-600 text-white px-2 py-0.5 rounded">Verbal</span>
-                  <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-                  <span className="bg-blue-600 text-white px-2 py-0.5 rounded">Pseudocode</span>
-                  <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-                  <span className="bg-blue-600 text-white px-2 py-0.5 rounded">DSA</span>
+              {sections && sections.length > 0 && (
+                <div className="space-y-2 pt-2">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block text-left">Drive Section Roadmap</span>
+                  <div className="flex flex-wrap items-center gap-1.5 bg-slate-50 p-2.5 border border-slate-200/60 rounded-xl text-[10px] font-bold text-slate-500 justify-start">
+                    {sections.map((sec: any, idx: number) => (
+                      <div key={idx} className="flex items-center gap-1.5">
+                        {idx > 0 && <ChevronRight className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />}
+                        <span className="bg-blue-600 text-white px-2.5 py-0.5 rounded-lg shadow-sm">
+                          {sec.name} ({sec.questions.length}Q)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Start CTA Button */}
             <Button
               size="lg"
-              className={`w-full font-bold h-12 text-sm shadow-md transition-all rounded-xl ${
-                isWaiting
-                  ? "bg-slate-200 text-slate-400 cursor-not-allowed hover:bg-slate-200"
-                  : (exam?.cameraMonitor && !faceRecognized)
-                    ? "bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200 cursor-pointer"
-                    : (exam?.cameraMonitor && !screenShared)
-                      ? "bg-amber-600 hover:bg-amber-700 text-white"
-                      : "bg-blue-600 hover:bg-blue-700 text-white"
-              }`}
-              onClick={(exam?.cameraMonitor && !screenShared) ? handleShareScreen : handleStart}
-              disabled={isWaiting}
+              className={`w-full font-bold h-12 text-sm shadow-md transition-all rounded-xl ${buttonConfig.className}`}
+              onClick={buttonConfig.onClick}
+              disabled={buttonConfig.disabled}
             >
               <Maximize className="mr-2 h-4 w-4" />
-              {isWaiting
-                ? "Lobby Timer Active..."
-                : (exam?.cameraMonitor && !faceRecognized)
-                  ? "Awaiting Identity Recognition Check"
-                  : (exam?.cameraMonitor && !screenShared)
-                    ? "Step 2: Share Entire Screen"
-                    : "Enter Examination Fullscreen"}
+              {buttonConfig.text}
             </Button>
 
           </div>
@@ -1331,15 +1706,39 @@ const ExamPage = () => {
  
 
   // =======================
+  // NETWORK CONNECTION DISCONNECTED BLOCKER
+  // =======================
+  if (started && !submitted && exam?.aiProctorActive && exam?.trackInternetIssues && !isOnline) {
+    return (
+      <div className="fixed inset-0 z-[9999] bg-slate-950 flex flex-col items-center justify-center text-white p-6 font-sans">
+        <div className="absolute inset-0 bg-gradient-to-b from-blue-955/20 via-transparent to-slate-955/40 pointer-events-none" />
+        
+        <div className="max-w-md w-full bg-slate-900 border border-slate-805 rounded-3xl p-8 text-center space-y-6 shadow-2xl relative z-10">
+          <div className="mx-auto w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-550 animate-pulse">
+            <WifiOff className="h-8 w-8" />
+          </div>
+
+          <div className="space-y-2 text-center">
+            <h2 className="text-2xl font-black tracking-tight text-white">Internet Disconnected</h2>
+            <p className="text-slate-400 text-xs leading-relaxed">
+              Your network connection was lost. The examination environment has been paused. Please restore internet connectivity to resume your test.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // =======================
   // SCREEN SHARING DISCONNECTED BLOCKER
   // =======================
-  if (started && !submitted && exam?.cameraMonitor && !screenStream) {
+  if (started && !submitted && screenShareRequired && !screenStream) {
     return (
       <div className="fixed inset-0 z-[9999] bg-slate-950 flex flex-col items-center justify-center text-white p-6 font-sans">
         <div className="absolute inset-0 bg-gradient-to-b from-blue-955/20 via-transparent to-slate-955/40 pointer-events-none" />
         
         <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center space-y-6 shadow-2xl relative z-10">
-          <div className="mx-auto w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500 animate-pulse">
+          <div className="mx-auto w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-505 flex-shrink-0 animate-pulse">
             <AlertTriangle className="h-8 w-8" />
           </div>
 
@@ -1364,7 +1763,7 @@ const ExamPage = () => {
   // =======================
   // FULLSCREEN EXITED BLOCKER
   // =======================
-  if (started && !submitted && !isFullscreen) {
+  if (started && !submitted && fullscreenRequired && !isFullscreen) {
     return (
       <div className="fixed inset-0 z-[9999] bg-slate-950 flex flex-col items-center justify-center text-white p-6 font-sans">
         <div className="absolute inset-0 bg-gradient-to-b from-blue-955/20 via-transparent to-slate-955/40 pointer-events-none" />
@@ -1388,7 +1787,7 @@ const ExamPage = () => {
             </div>
             <div className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-              Exiting fullscreen repeatedly will trigger automatic submission.
+              Exiting fullscreen repeatedly is logged and reported to the proctoring administrator.
             </div>
           </div>
 
@@ -1458,6 +1857,22 @@ const ExamPage = () => {
             <p className="mb-4 text-sm font-semibold text-gray-700">{faceWarningMessage}</p>
             <Button
               onClick={() => setShowFaceWarningModal(false)}
+              className="bg-[#0b3d91] hover:bg-[#082d6e] text-white"
+            >
+              Return
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* NOISE WARNING MODAL */}
+      {showNoiseWarningModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-white p-6 rounded-md shadow-lg w-[350px] text-center font-roboto">
+            <AlertTriangle className="mx-auto mb-2 text-red-600 h-10 w-10 animate-bounce" />
+            <p className="mb-4 text-sm font-semibold text-gray-700">{noiseWarningMessage}</p>
+            <Button
+              onClick={() => setShowNoiseWarningModal(false)}
               className="bg-[#0b3d91] hover:bg-[#082d6e] text-white"
             >
               Return
@@ -1595,11 +2010,47 @@ const ExamPage = () => {
                     <span className="text-sm font-bold text-[#0b3d91] uppercase tracking-wider">
                       Question {currentQuestionIndex + 1}
                     </span>
-                    {currentQuestion.isMultipleCorrect && (
-                      <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider animate-pulse">
-                        Multiple Answers Correct (Select all that apply)
+                    <div className="flex flex-wrap gap-1.5 mt-0.5">
+                      <span className="text-[10px] bg-blue-50 text-[#0b3d91] border border-blue-100 px-1.5 py-0.5 rounded font-mono font-bold uppercase">
+                        Section: {currentQuestion.section || "General"}
                       </span>
-                    )}
+                      {(() => {
+                        const qType = currentQuestion.questionType || (currentQuestion.isMultipleCorrect ? "MSQ" : "MCQ");
+                        if (qType === "MSQ") {
+                          return (
+                            <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-100 px-1.5 py-0.5 rounded font-mono font-bold uppercase animate-pulse">
+                              MSQ (Select all that apply)
+                            </span>
+                          );
+                        }
+                        if (qType === "FIB") {
+                          return (
+                            <span className="text-[10px] bg-purple-50 text-purple-700 border border-purple-100 px-1.5 py-0.5 rounded font-mono font-bold uppercase">
+                              Fill in the blanks
+                            </span>
+                          );
+                        }
+                        if (qType === "NUM") {
+                          return (
+                            <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-1.5 py-0.5 rounded font-mono font-bold uppercase">
+                              Numerical
+                            </span>
+                          );
+                        }
+                        if (qType === "DES") {
+                          return (
+                            <span className="text-[10px] bg-teal-50 text-teal-700 border border-teal-100 px-1.5 py-0.5 rounded font-mono font-bold uppercase">
+                              Descriptive
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded font-mono font-bold uppercase">
+                            MCQ (Single Choice)
+                          </span>
+                        );
+                      })()}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {currentQuestion.negativeMarks > 0 && (
@@ -1635,46 +2086,108 @@ const ExamPage = () => {
                   </div>
                 )}
 
-                {/* OPTIONS GRID */}
-                <div className="space-y-3 flex-1">
-                  {currentQuestion.shuffledOptions?.map((opt: any, index: number) => {
-                    const currentAns = answers.find((a) => a.questionId === currentQuestion._id)?.selectedOption;
-                    const isSelected = currentAns ? currentAns.split(",").includes(opt.key) : false;
+                {/* DYNAMIC ANSWERING INTERFACE */}
+                {(() => {
+                  const qType = currentQuestion.questionType || (currentQuestion.isMultipleCorrect ? "MSQ" : "MCQ");
+                  const currentAns = answers.find((a) => a.questionId === currentQuestion._id)?.selectedOption || "";
 
+                  if (qType === "MCQ" || qType === "MSQ") {
                     return (
-                      <div
-                        key={index}
-                        onClick={() => selectOption(currentQuestion._id, opt.key)}
-                        className={`flex items-center gap-3 px-4 py-3 border rounded-md cursor-pointer transition-all ${
-                          isSelected
-                            ? "border-[#0b3d91] bg-blue-50/50 shadow-sm"
-                            : "border-gray-200 hover:bg-gray-50"
-                        }`}
-                      >
-                        <div
-                          className={`w-5 h-5 border flex items-center justify-center shrink-0 ${
-                            currentQuestion.isMultipleCorrect ? "rounded" : "rounded-full"
-                          } ${
-                            isSelected
-                              ? "border-[#0b3d91] bg-[#0b3d91] text-white"
-                              : "border-gray-300 bg-white"
-                          }`}
-                        >
-                          {isSelected && (
-                            currentQuestion.isMultipleCorrect ? (
-                              <Check className="h-3 w-3 text-white stroke-[3px]" />
-                            ) : (
-                              <span className="w-2 h-2 rounded-full bg-white" />
-                            )
-                          )}
-                        </div>
-                        <span className="text-sm text-gray-700 font-medium">
-                          <strong className="mr-1">{String.fromCharCode(65 + index)}.</strong> {opt.value}
-                        </span>
+                      <div className="space-y-3 flex-1">
+                        {currentQuestion.shuffledOptions?.map((opt: any, index: number) => {
+                          const isSelected = currentAns ? currentAns.split(",").includes(opt.key) : false;
+
+                          return (
+                            <div
+                              key={index}
+                              onClick={() => selectOption(currentQuestion._id, opt.key)}
+                              className={`flex items-center gap-3 px-4 py-3 border rounded-md cursor-pointer transition-all ${
+                                isSelected
+                                  ? "border-[#0b3d91] bg-blue-50/50 shadow-sm"
+                                  : "border-gray-200 hover:bg-gray-50"
+                              }`}
+                            >
+                              <div
+                                className={`w-5 h-5 border flex items-center justify-center shrink-0 ${
+                                  qType === "MSQ" ? "rounded" : "rounded-full"
+                                } ${
+                                  isSelected
+                                    ? "border-[#0b3d91] bg-[#0b3d91] text-white"
+                                    : "border-gray-300 bg-white"
+                                }`}
+                              >
+                                {isSelected && (
+                                  qType === "MSQ" ? (
+                                    <Check className="h-3 w-3 text-white stroke-[3px]" />
+                                  ) : (
+                                    <span className="w-2 h-2 rounded-full bg-white" />
+                                  )
+                                )}
+                              </div>
+                              <span className="text-sm text-gray-700 font-medium">
+                                <strong className="mr-1">{String.fromCharCode(65 + index)}.</strong> {opt.value}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     );
-                  })}
-                </div>
+                  }
+
+                  if (qType === "FIB") {
+                    return (
+                      <div className="space-y-2 mt-2 flex-1">
+                        <Label className="text-xs font-bold text-slate-500">Your Answer:</Label>
+                        <Input
+                          type="text"
+                          placeholder="Type your answer here..."
+                          value={currentAns}
+                          onChange={(e) => updateAnswer(currentQuestion._id, e.target.value)}
+                          className="w-full max-w-lg border border-gray-300 rounded-lg p-3 focus-visible:ring-blue-500 bg-white text-sm"
+                        />
+                      </div>
+                    );
+                  }
+
+                  if (qType === "NUM") {
+                    return (
+                      <div className="space-y-2 mt-2 flex-1">
+                        <Label className="text-xs font-bold text-slate-500">Your Numerical Answer:</Label>
+                        <Input
+                          type="text"
+                          placeholder="Type numerical value (e.g., 42, -3.14)..."
+                          value={currentAns}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === "" || /^-?\d*\.?\d*$/.test(val)) {
+                              updateAnswer(currentQuestion._id, val);
+                            }
+                          }}
+                          className="w-full max-w-xs border border-gray-350 rounded-lg p-3 focus-visible:ring-blue-500 font-mono text-base bg-white"
+                        />
+                      </div>
+                    );
+                  }
+
+                  if (qType === "DES") {
+                    return (
+                      <div className="space-y-2 mt-2 flex-1 flex flex-col min-h-[200px]">
+                        <Label className="text-xs font-bold text-slate-500">Your Descriptive Answer:</Label>
+                        <textarea
+                          placeholder="Type your descriptive answer in detail here..."
+                          value={currentAns}
+                          onChange={(e) => updateAnswer(currentQuestion._id, e.target.value)}
+                          className="w-full flex-1 min-h-[140px] border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-[#0b3d91] font-sans text-sm focus:outline-none resize-y bg-white"
+                        />
+                        <div className="text-[10px] text-gray-400 text-right mt-1 font-semibold">
+                          {currentAns.length} characters
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return null;
+                })()}
               </div>
             ) : (
               <div className="text-center text-muted-foreground py-8">
@@ -1746,7 +2259,7 @@ const ExamPage = () => {
           </div>
 
           {/* PROCTOR CAMERA FEED CARD */}
-          {exam?.cameraMonitor && (
+          {cameraRequired && (
             <div className="bg-white border border-gray-200 rounded-md shadow-sm p-4 flex flex-col gap-3">
               <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex justify-between items-center">
                 <span>AI Proctor Feed</span>
