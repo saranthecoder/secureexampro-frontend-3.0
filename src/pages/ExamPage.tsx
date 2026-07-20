@@ -455,8 +455,7 @@ const ExamPage = () => {
             noiseSpikeDuration = 0; // reset
             setNoiseWarningCount((prev) => {
               const next = prev + 1;
-              setNoiseWarningMessage(`Ambient noise detected! Please keep quiet. (Warning ${next})`);
-              setShowNoiseWarningModal(true);
+              setNoiseWarningMessage(`Ambient noise detected! (Warning ${next})`);
               return next;
             });
           }
@@ -753,8 +752,7 @@ const ExamPage = () => {
   const handleFaceWarning = useCallback(() => {
     setFaceWarningCount((prev) => {
       const nextCount = prev + 1;
-      setFaceWarningMessage(`Head turn detected! Please look straight at the screen. (Warning ${nextCount})`);
-      setShowFaceWarningModal(true);
+      setFaceWarningMessage(`Head turn detected! (Warning ${nextCount})`);
       return nextCount;
     });
   }, []);
@@ -1849,37 +1847,7 @@ const ExamPage = () => {
         </div>
       )}
 
-      {/* FACE WARNING MODAL */}
-      {showFaceWarningModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="bg-white p-6 rounded-md shadow-lg w-[350px] text-center font-roboto">
-            <AlertTriangle className="mx-auto mb-2 text-red-600 h-10 w-10 animate-bounce" />
-            <p className="mb-4 text-sm font-semibold text-gray-700">{faceWarningMessage}</p>
-            <Button
-              onClick={() => setShowFaceWarningModal(false)}
-              className="bg-[#0b3d91] hover:bg-[#082d6e] text-white"
-            >
-              Return
-            </Button>
-          </div>
-        </div>
-      )}
 
-      {/* NOISE WARNING MODAL */}
-      {showNoiseWarningModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="bg-white p-6 rounded-md shadow-lg w-[350px] text-center font-roboto">
-            <AlertTriangle className="mx-auto mb-2 text-red-600 h-10 w-10 animate-bounce" />
-            <p className="mb-4 text-sm font-semibold text-gray-700">{noiseWarningMessage}</p>
-            <Button
-              onClick={() => setShowNoiseWarningModal(false)}
-              className="bg-[#0b3d91] hover:bg-[#082d6e] text-white"
-            >
-              Return
-            </Button>
-          </div>
-        </div>
-      )}
 
       {/* CONFIRM SUBMIT */}
       {showConfirm && (
