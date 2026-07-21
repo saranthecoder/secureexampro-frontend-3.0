@@ -932,7 +932,19 @@ const ExamPage = () => {
         if (data) {
           if (data.terminated) handleAdminTermination();
           if (data.assignedSet !== undefined && data.assignedSet !== "") setAssignedSet(data.assignedSet);
-          if (data.codingPhase !== undefined) setCodingPhase(data.codingPhase);
+          if (data.codingPhase !== undefined) {
+            setCodingPhase(data.codingPhase);
+            if (data.codingPhase === "completed" && !submitted) {
+              setSubmitted(true);
+              document.exitFullscreen?.().catch(() => {});
+              Swal.fire({
+                title: "Assessment Finalized",
+                text: "The examiner has finalized your assessment and graded your submission. Your session is now closed.",
+                icon: "info",
+                confirmButtonColor: "#3b82f6"
+              });
+            }
+          }
           if (data.allowLocalIdeSwitch !== undefined) setAllowLocalIdeSwitch(data.allowLocalIdeSwitch);
         }
       } catch (err) {
