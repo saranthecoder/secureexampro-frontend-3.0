@@ -2806,7 +2806,11 @@ const AdminDashboard = () => {
                               </td>
 
                               <td className="px-6 py-4 text-center">
-                                {r.allowLocalIdeSwitch ? (
+                                {r.codingPhase === "completed" ? (
+                                  <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
+                                    Completed & Graded
+                                  </Badge>
+                                ) : r.allowLocalIdeSwitch ? (
                                   <Badge className="bg-purple-100 text-purple-800 border border-purple-300 text-[10px] rounded font-black uppercase py-0.5 px-2.5 animate-pulse">
                                     IDE Access Unlocked
                                   </Badge>
@@ -2825,7 +2829,8 @@ const AdminDashboard = () => {
                                 <div className="flex justify-end items-center gap-2">
                                   <Button
                                     size="sm"
-                                    className={`h-8 px-3 text-xs font-extrabold rounded-xl shadow-sm ${
+                                    disabled={r.codingPhase === "completed"}
+                                    className={`h-8 px-3 text-xs font-extrabold rounded-xl shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
                                       r.allowLocalIdeSwitch
                                         ? "bg-amber-500 hover:bg-amber-600 text-white"
                                         : "bg-purple-600 hover:bg-purple-700 text-white"
@@ -2837,7 +2842,8 @@ const AdminDashboard = () => {
 
                                   <Button
                                     size="sm"
-                                    className="h-8 px-3 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-sm"
+                                    disabled={r.codingPhase === "completed"}
+                                    className="h-8 px-3 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                     onClick={async () => {
                                       const { value: formValues } = await Swal.fire({
                                         title: `Grade Candidate: ${r.studentName}`,
@@ -2870,10 +2876,11 @@ const AdminDashboard = () => {
 
                                   <Button
                                     size="sm"
-                                    className="h-8 px-3 text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm"
+                                    disabled={r.codingPhase === "completed"}
+                                    className="h-8 px-3 text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                     onClick={() => handleCompleteCodingExam(monitorExam?.examCode || "", r.studentEmail)}
                                   >
-                                    Complete
+                                    {r.codingPhase === "completed" ? "Finalized" : "Complete"}
                                   </Button>
                                 </div>
                               </td>

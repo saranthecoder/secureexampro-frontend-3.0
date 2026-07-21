@@ -322,6 +322,7 @@ const ExamPage = () => {
   const [internetIssueCount, setInternetIssueCount] = useState(0);
   const [fullScreenExitCount, setFullScreenExitCount] = useState(0);
   const [screenShareViolationCount, setScreenShareViolationCount] = useState(0);
+  const isSubmittingOrCompleted = useRef(false);
 
 
   // Listen to network status change events
@@ -506,7 +507,7 @@ const ExamPage = () => {
   const prevScreenStream = useRef<any>(null);
 
   useEffect(() => {
-    if (!started || submitted || !screenShareRequired || allowLocalIdeSwitch) return;
+    if (!started || submitted || isSubmittingOrCompleted.current || !screenShareRequired || allowLocalIdeSwitch) return;
     if (prevScreenStream.current && !screenStream) {
       setScreenShareViolationCount((prev) => prev + 1);
     }
@@ -522,7 +523,7 @@ const ExamPage = () => {
   const hasEnteredFullscreenOnce = useRef(false);
 
   useEffect(() => {
-    if (!started || submitted || !fullscreenRequired || allowLocalIdeSwitch) return;
+    if (!started || submitted || isSubmittingOrCompleted.current || !fullscreenRequired || allowLocalIdeSwitch) return;
 
     if (isFullscreen) {
       hasEnteredFullscreenOnce.current = true;
@@ -698,6 +699,7 @@ const ExamPage = () => {
     faceTurnTerminated: boolean = false
   ) => {
     if (submitting || submitLock.current || offlineSyncPending) return; // prevent double submit
+    isSubmittingOrCompleted.current = true;
     submitLock.current = true;
 
     const parsedUser = JSON.parse(localStorage.getItem("user") || "{}");
@@ -935,6 +937,7 @@ const ExamPage = () => {
           if (data.codingPhase !== undefined) {
             setCodingPhase(data.codingPhase);
             if (data.codingPhase === "completed" && !submitted) {
+              isSubmittingOrCompleted.current = true;
               setSubmitted(true);
               document.exitFullscreen?.().catch(() => {});
               Swal.fire({
