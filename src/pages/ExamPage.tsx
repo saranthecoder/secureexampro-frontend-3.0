@@ -27,7 +27,8 @@ import {
   WifiOff,
   FileText,
   Calculator,
-  X
+  X,
+  Zap
 } from "lucide-react";
 import BASE_URL from "@/config/api";
 
@@ -73,7 +74,10 @@ const ExamPage = () => {
   const [offlineSyncPending, setOfflineSyncPending] = useState(false);
   const [isTerminatedByAdmin, setIsTerminatedByAdmin] = useState(false);
 
-
+  // Coding Hybrid Assessment States
+  const [assignedSet, setAssignedSet] = useState("");
+  const [codingPhase, setCodingPhase] = useState("lobby");
+  const [allowLocalIdeSwitch, setAllowLocalIdeSwitch] = useState(false);
 
   // =======================
   // 🔐 SECURITY HOOK (Tab switches & Fullscreen, max warnings: 3)
@@ -89,6 +93,7 @@ const ExamPage = () => {
     isFullscreen,
   } = useExamSecurity({
     enabled: started && !submitted,
+    paused: allowLocalIdeSwitch,
     maxWarnings: exam?.maxTabSwitches || 3,
     onDisqualify: (count) => {
       Swal.fire({
@@ -491,7 +496,7 @@ const ExamPage = () => {
       if (source) source.disconnect();
       if (audioContext && audioContext.state !== "closed") audioContext.close();
     };
-  }, [exam?.aiProctorActive, exam?.micMonitor, started, submitted, stream]);
+  }, [exam?.aiProctorActive, exam?.micMonitor, started, submitted, stream, allowLocalIdeSwitch]);
 
   // ==========================================
   // 💻 Screen Share Disconnection Warnings
@@ -501,12 +506,12 @@ const ExamPage = () => {
   const prevScreenStream = useRef<any>(null);
 
   useEffect(() => {
-    if (!started || submitted || !screenShareRequired) return;
+    if (!started || submitted || !screenShareRequired || allowLocalIdeSwitch) return;
     if (prevScreenStream.current && !screenStream) {
       setScreenShareViolationCount((prev) => prev + 1);
     }
     prevScreenStream.current = screenStream;
-  }, [screenStream, started, submitted, screenShareRequired]);
+  }, [screenStream, started, submitted, screenShareRequired, allowLocalIdeSwitch]);
 
   // ==========================================
   // 🖥️ Fullscreen Exit Warnings & Threshold Termination
@@ -517,7 +522,7 @@ const ExamPage = () => {
   const hasEnteredFullscreenOnce = useRef(false);
 
   useEffect(() => {
-    if (!started || submitted || !fullscreenRequired) return;
+    if (!started || submitted || !fullscreenRequired || allowLocalIdeSwitch) return;
 
     if (isFullscreen) {
       hasEnteredFullscreenOnce.current = true;
@@ -537,7 +542,7 @@ const ExamPage = () => {
       });
     }
     prevIsFullscreen.current = isFullscreen;
-  }, [isFullscreen, started, submitted, fullscreenRequired, maxFullscreenExits, tabSwitchCount, faceWarningCount]);
+  }, [isFullscreen, started, submitted, fullscreenRequired, maxFullscreenExits, tabSwitchCount, faceWarningCount, allowLocalIdeSwitch]);
 
   // Lobby face verification effect
   useEffect(() => {
@@ -888,16 +893,20 @@ const ExamPage = () => {
 
   // Periodic face analysis loop during active proctored exam
   useEffect(() => {
-    if (!started || submitted || !cameraRequired || !stream) return;
+    if (!started || submitted || !cameraRequired || !stream || allowLocalIdeSwitch) return;
     const interval = setInterval(() => {
       captureFrameAndAnalyze();
     }, 500);
     return () => clearInterval(interval);
-  }, [started, submitted, cameraRequired, stream, captureFrameAndAnalyze]);
+  }, [started, submitted, cameraRequired, stream, captureFrameAndAnalyze, allowLocalIdeSwitch]);
 
-  // Run active candidate heartbeat loop during the exam (and poll for admin termination status)
+  // Run active candidate heartbeat loop
+  // - For coding_hybrid: runs from lobby (to poll set assignment) and during exam
+  // - For standard: runs only after exam has started (preserving original behavior)
   useEffect(() => {
-    if (!started || submitted || isTerminatedByAdmin) return;
+    if (submitted || isTerminatedByAdmin) return;
+    // For standard exams, only run heartbeat after exam has started
+    if (exam?.assessmentType !== "coding_hybrid" && !started) return;
 
     const sendHeartbeat = async () => {
       try {
@@ -920,8 +929,11 @@ const ExamPage = () => {
           }),
         });
         const data = await res.json();
-        if (data && data.terminated) {
-          handleAdminTermination();
+        if (data) {
+          if (data.terminated) handleAdminTermination();
+          if (data.assignedSet !== undefined && data.assignedSet !== "") setAssignedSet(data.assignedSet);
+          if (data.codingPhase !== undefined) setCodingPhase(data.codingPhase);
+          if (data.allowLocalIdeSwitch !== undefined) setAllowLocalIdeSwitch(data.allowLocalIdeSwitch);
         }
       } catch (err) {
         console.error("Failed to send active status heartbeat:", err);
@@ -929,14 +941,15 @@ const ExamPage = () => {
     };
 
     sendHeartbeat();
-    const intervalId = setInterval(sendHeartbeat, 5000);
+    const intervalId = setInterval(sendHeartbeat, 3000);
 
     return () => clearInterval(intervalId);
   }, [
-    started,
     submitted,
     isTerminatedByAdmin,
+    started,
     exam?.examCode,
+    exam?.assessmentType,
     handleAdminTermination,
     faceWarningCount,
     noiseWarningCount,
@@ -945,6 +958,32 @@ const ExamPage = () => {
     internetIssueCount,
     screenShareViolationCount
   ]);
+
+  const [currentCodingProblemIndex, setCurrentCodingProblemIndex] = useState(0);
+
+  const currentSetObj = useMemo(() => {
+    if (exam?.questionSets && exam.questionSets.length > 0) {
+      return exam.questionSets.find((qs: any) => qs.setName === assignedSet) || exam.questionSets[0];
+    }
+    return null;
+  }, [exam?.questionSets, assignedSet]);
+
+  const codingProblems = useMemo(() => {
+    if (!currentSetObj) return [];
+    if (currentSetObj.problems && Array.isArray(currentSetObj.problems) && currentSetObj.problems.length > 0) {
+      return currentSetObj.problems;
+    }
+    return [
+      {
+        title: "Problem 1",
+        problemStatement: currentSetObj.problemStatement || "Write code and logic for your assigned set problem.",
+        sampleInputOutput: currentSetObj.sampleInputOutput || "",
+        instructions: currentSetObj.instructions || ""
+      }
+    ];
+  }, [currentSetObj]);
+
+  const activeCodingProblem = codingProblems[currentCodingProblemIndex] || codingProblems[0];
 
   const duration = exam?.duration ?? 0;
 
@@ -1367,9 +1406,21 @@ const ExamPage = () => {
         };
       }
 
-      // 5. Ready to start
+      // 5. Question Set Assignment check for Coding Hybrid assessments
+      if (exam?.assessmentType === "coding_hybrid" && !assignedSet) {
+        return {
+          text: "Waiting for Examiner to Assign Question Paper Set...",
+          disabled: true,
+          className: "bg-purple-100 text-purple-700 border border-purple-300 font-extrabold cursor-not-allowed",
+          onClick: () => {}
+        };
+      }
+
+      // 6. Ready to start
       return {
-        text: "Enter Examination Fullscreen",
+        text: exam?.assessmentType === "coding_hybrid"
+          ? `Open Question Paper & Begin Exam (${assignedSet})`
+          : "Enter Examination Fullscreen",
         disabled: false,
         className: "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer shadow-lg hover:shadow-blue-500/25",
         onClick: handleStart
@@ -1736,7 +1787,7 @@ const ExamPage = () => {
   // =======================
   // NETWORK CONNECTION DISCONNECTED BLOCKER
   // =======================
-  if (started && !submitted && exam?.aiProctorActive && exam?.trackInternetIssues && !isOnline) {
+  if (started && !submitted && exam?.aiProctorActive && exam?.trackInternetIssues && !isOnline && !allowLocalIdeSwitch) {
     return (
       <div className="fixed inset-0 z-[9999] bg-slate-950 flex flex-col items-center justify-center text-white p-6 font-sans">
         <div className="absolute inset-0 bg-gradient-to-b from-blue-955/20 via-transparent to-slate-955/40 pointer-events-none" />
@@ -1760,7 +1811,7 @@ const ExamPage = () => {
   // =======================
   // SCREEN SHARING DISCONNECTED BLOCKER
   // =======================
-  if (started && !submitted && screenShareRequired && !screenStream) {
+  if (started && !submitted && screenShareRequired && !screenStream && !allowLocalIdeSwitch) {
     return (
       <div className="fixed inset-0 z-[9999] bg-slate-950 flex flex-col items-center justify-center text-white p-6 font-sans">
         <div className="absolute inset-0 bg-gradient-to-b from-blue-955/20 via-transparent to-slate-955/40 pointer-events-none" />
@@ -1791,7 +1842,7 @@ const ExamPage = () => {
   // =======================
   // FULLSCREEN EXITED BLOCKER
   // =======================
-  if (started && !submitted && fullscreenRequired && !isFullscreen) {
+  if (started && !submitted && fullscreenRequired && !isFullscreen && !allowLocalIdeSwitch) {
     return (
       <div className="fixed inset-0 z-[9999] bg-slate-950 flex flex-col items-center justify-center text-white p-6 font-sans">
         <div className="absolute inset-0 bg-gradient-to-b from-blue-955/20 via-transparent to-slate-955/40 pointer-events-none" />
@@ -1836,7 +1887,7 @@ const ExamPage = () => {
   return (
     <div className="min-h-screen bg-[#f3f4f6] relative font-roboto select-none">
       {/* OFFLINE STATUS BANNER */}
-      {!isOnline && (
+      {!isOnline && !allowLocalIdeSwitch && (
         <div className="sticky top-0 z-[100] bg-amber-600 text-white text-xs font-bold py-2.5 px-4 text-center flex items-center justify-center gap-2 shadow-md animate-pulse">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span>Internet Disconnected. All progress is cached locally. Synced automatically once connection is restored. Do not close this browser tab.</span>
@@ -1865,7 +1916,7 @@ const ExamPage = () => {
       )}
 
       {/* WARNING MODAL */}
-      {showWarning && (
+      {showWarning && !allowLocalIdeSwitch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="bg-white p-6 rounded-md shadow-lg w-[350px] text-center font-roboto">
             <AlertTriangle className="mx-auto mb-2 text-red-600 h-10 w-10 animate-bounce" />
@@ -1946,28 +1997,30 @@ const ExamPage = () => {
             </p>
           </div>
 
-          {/* TIMER */}
-          <div
-            className={`px-4 py-1.5 rounded text-sm font-semibold flex items-center gap-2 ${
-              timer.isLow
-                ? "bg-red-500 text-white animate-pulse shadow"
-                : "bg-white/10 text-white border border-white/20"
-            }`}
-          >
-            <Clock className="h-4 w-4" />
-            Time Left: <span className="font-mono">{timer.formatted}</span>
-          </div>
+          {/* TIMER — Hidden for Coding Hybrid */}
+          {exam?.assessmentType !== "coding_hybrid" && (
+            <div
+              className={`px-4 py-1.5 rounded text-sm font-semibold flex items-center gap-2 ${
+                timer.isLow
+                  ? "bg-red-500 text-white animate-pulse shadow"
+                  : "bg-white/10 text-white border border-white/20"
+              }`}
+            >
+              <Clock className="h-4 w-4" />
+              Time Left: <span className="font-mono">{timer.formatted}</span>
+            </div>
+          )}
 
-
-
-          {/* SUBMIT */}
-          <Button
-            onClick={() => setShowConfirm(true)}
-            className="bg-red-600 hover:bg-red-700 text-white font-semibold text-xs py-1.5 h-auto uppercase tracking-wider"
-          >
-            <Send className="mr-1.5 h-3.5 w-3.5" />
-            Submit Test
-          </Button>
+          {/* SUBMIT — Hidden for Coding Hybrid */}
+          {exam?.assessmentType !== "coding_hybrid" && (
+            <Button
+              onClick={() => setShowConfirm(true)}
+              className="bg-red-600 hover:bg-red-700 text-white font-semibold text-xs py-1.5 h-auto uppercase tracking-wider"
+            >
+              <Send className="mr-1.5 h-3.5 w-3.5" />
+              Submit Test
+            </Button>
+          )}
         </div>
       </header>
 
@@ -2004,7 +2057,144 @@ const ExamPage = () => {
 
           {/* QUESTION BOX */}
           <div className="bg-white border border-gray-200 rounded-md shadow-sm p-6 flex-1 flex flex-col min-h-[400px]">
-            {currentQuestion ? (
+            {exam?.assessmentType === "coding_hybrid" ? (
+              <div className="flex-1 flex flex-col space-y-5 text-left">
+                {/* IDE ACCESS & PROCTOR STATUS BANNER */}
+                {allowLocalIdeSwitch ? (
+                  <div className="bg-purple-900 text-white p-4 rounded-xl shadow-md border border-purple-700 flex items-center justify-between animate-pulse">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-purple-800 flex items-center justify-center text-amber-400 shrink-0">
+                        <Zap className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-extrabold text-amber-300">⚡ Local IDE Access UNLOCKED by Examiner</div>
+                        <div className="text-xs text-purple-200 font-medium">
+                          You may now switch to your local IDE (VS Code, Code::Blocks, Terminal) to write and execute your code. Tab switch warnings are temporarily paused.
+                        </div>
+                      </div>
+                    </div>
+                    <span className="bg-purple-800 border border-purple-600 px-3 py-1 rounded-lg text-xs font-black text-amber-400 uppercase tracking-wider shrink-0">
+                      IDE Execution Active
+                    </span>
+                  </div>
+                ) : (
+                  <div className="bg-blue-50 border border-blue-200 text-blue-900 p-4 rounded-xl shadow-sm flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 shrink-0">
+                        <FileText className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-blue-950">📝 Phase 1: Physical Paper Logic Writing</div>
+                        <div className="text-xs text-blue-700 font-medium">
+                          Write your algorithm on physical paper and present to examiner. Fullscreen security is active. Do not switch tabs.
+                        </div>
+                      </div>
+                    </div>
+                    <span className="bg-blue-200 text-blue-800 px-3 py-1 rounded-lg text-xs font-bold uppercase shrink-0">
+                      Paper Writing Phase
+                    </span>
+                  </div>
+                )}
+
+                {/* QUESTION SET HEADER & DETAILS */}
+                <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 space-y-4 shadow-md text-left">
+                  <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-3 gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="bg-purple-600 text-white px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider">
+                        {assignedSet || currentSetObj?.setName || "Set A"}
+                      </span>
+                      <span className="text-xs font-bold text-slate-400">Coding Hybrid Question Paper</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-xs font-bold">
+                      <span className="bg-slate-800 text-slate-300 px-2.5 py-1 rounded-md">
+                        Paper Marks: {currentSetObj?.paperMaxMarks || 50}
+                      </span>
+                      <span className="bg-slate-800 text-slate-300 px-2.5 py-1 rounded-md">
+                        Execution Marks: {currentSetObj?.executionMaxMarks || 50}
+                      </span>
+                      <span className="bg-emerald-950 text-emerald-400 border border-emerald-800 px-2.5 py-1 rounded-md font-extrabold">
+                        Total: {(currentSetObj?.paperMaxMarks || 50) + (currentSetObj?.executionMaxMarks || 50)} Marks
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* MULTI-PROBLEM NAVIGATION BAR (Pill Selectors & Forward/Backward) */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest mr-1">
+                        Problems ({codingProblems.length}):
+                      </span>
+                      {codingProblems.map((p: any, idx: number) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setCurrentCodingProblemIndex(idx)}
+                          className={`px-3 py-1 rounded-lg text-xs font-black transition-all ${
+                            currentCodingProblemIndex === idx
+                              ? "bg-purple-600 text-white shadow-md shadow-purple-600/30 scale-105"
+                              : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
+                          }`}
+                        >
+                          {p.title || `Problem ${idx + 1}`}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        disabled={currentCodingProblemIndex === 0}
+                        onClick={() => setCurrentCodingProblemIndex((i) => Math.max(0, i - 1))}
+                        className="h-8 px-3 text-xs font-extrabold bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 rounded-lg gap-1 border border-slate-700"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" /> Previous Problem
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={currentCodingProblemIndex >= codingProblems.length - 1}
+                        onClick={() => setCurrentCodingProblemIndex((i) => Math.min(codingProblems.length - 1, i + 1))}
+                        className="h-8 px-3 text-xs font-extrabold bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white rounded-lg gap-1 shadow-sm"
+                      >
+                        Next Problem <ChevronRight className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* ACTIVE PROBLEM STATEMENT */}
+                  <div className="space-y-1.5">
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-purple-400">
+                      Problem Statement #{currentCodingProblemIndex + 1}: {activeCodingProblem?.title || `Problem ${currentCodingProblemIndex + 1}`}
+                    </div>
+                    <div className="text-sm font-mono leading-relaxed text-slate-200 whitespace-pre-wrap bg-slate-950 p-4 rounded-xl border border-slate-800">
+                      {activeCodingProblem?.problemStatement || currentSetObj?.problemStatement || "Write code and logic for your assigned set problem."}
+                    </div>
+                  </div>
+
+                  {/* SAMPLE INPUT & OUTPUT */}
+                  {(activeCodingProblem?.sampleInputOutput || currentSetObj?.sampleInputOutput) && (
+                    <div className="space-y-1.5 pt-1">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-amber-400">
+                        Sample Inputs & Expected Outputs (Problem #{currentCodingProblemIndex + 1})
+                      </div>
+                      <div className="text-xs font-mono leading-relaxed text-amber-300 whitespace-pre-wrap bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                        {activeCodingProblem?.sampleInputOutput || currentSetObj?.sampleInputOutput}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* CANDIDATE INSTRUCTIONS */}
+                  {(activeCodingProblem?.instructions || currentSetObj?.instructions) && (
+                    <div className="space-y-1.5 pt-1">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-blue-400">Candidate Evaluation Instructions</div>
+                      <div className="text-xs font-mono text-slate-300 whitespace-pre-wrap bg-slate-950 p-3 rounded-xl border border-slate-800">
+                        {activeCodingProblem?.instructions || currentSetObj?.instructions}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : currentQuestion ? (
               <div className="flex-1 flex flex-col">
                 {/* QUESTION TITLE */}
                 <div className="flex justify-between items-center border-b pb-4 mb-4">
@@ -2200,46 +2390,61 @@ const ExamPage = () => {
 
           {/* BOTTOM BUTTON BAR */}
           <div className="bg-white border border-gray-200 rounded-md shadow-sm p-4 flex justify-between items-center">
-            {/* Left aligned: Clear Response */}
-            <Button
-              variant="outline"
-              onClick={() => selectOption(currentQuestion?._id, null)}
-              disabled={!answers.find((a) => a.questionId === currentQuestion?._id)?.selectedOption}
-              className="text-gray-600 hover:text-gray-900 border-gray-300 hover:bg-gray-50 text-xs font-semibold uppercase tracking-wider py-2 h-auto"
-            >
-              Clear Response
-            </Button>
-
-            {/* Right aligned: Save & Next or Submit Section */}
-            <div>
-              {currentQuestionIndex === currentSectionQuestions.length - 1 ? (
-                currentSectionIndex === sections.length - 1 ? (
-                  <Button
-                    onClick={() => setShowConfirm(true)}
-                    className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs uppercase tracking-wider py-2 h-auto"
-                  >
-                    <Send className="mr-1.5 h-3.5 w-3.5" />
-                    Submit Exam
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={() => setShowNextSectionConfirm(true)}
-                    className="bg-green-600 hover:bg-green-700 text-white font-bold text-xs uppercase tracking-wider py-2 h-auto"
-                  >
-                    Save & Next Section
-                    <ChevronRight className="ml-1.5 h-3.5 w-3.5" />
-                  </Button>
-                )
-              ) : (
+            {exam?.assessmentType === "coding_hybrid" ? (
+              <>
+                <div className="text-xs font-bold text-slate-500 flex items-center gap-1.5">
+                  <Shield className="h-4 w-4 text-blue-600" />
+                  <span>Physical Paper & Local IDE Evaluation Mode active.</span>
+                </div>
+                <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3.5 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  <span>Evaluation In Progress (Examiner will submit exam upon grading)</span>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Left aligned: Clear Response */}
                 <Button
-                  onClick={() => setCurrentQuestionIndex((i) => i + 1)}
-                  className="bg-[#0b3d91] hover:bg-[#082d6e] text-white font-bold text-xs uppercase tracking-wider py-2 h-auto"
+                  variant="outline"
+                  onClick={() => selectOption(currentQuestion?._id, null)}
+                  disabled={!answers.find((a) => a.questionId === currentQuestion?._id)?.selectedOption}
+                  className="text-gray-600 hover:text-gray-900 border-gray-300 hover:bg-gray-50 text-xs font-semibold uppercase tracking-wider py-2 h-auto"
                 >
-                  Save & Next
-                  <ChevronRight className="ml-1.5 h-3.5 w-3.5" />
+                  Clear Response
                 </Button>
-              )}
-            </div>
+
+                {/* Right aligned: Save & Next or Submit Section */}
+                <div>
+                  {currentQuestionIndex === currentSectionQuestions.length - 1 ? (
+                    currentSectionIndex === sections.length - 1 ? (
+                      <Button
+                        onClick={() => setShowConfirm(true)}
+                        className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs uppercase tracking-wider py-2 h-auto"
+                      >
+                        <Send className="mr-1.5 h-3.5 w-3.5" />
+                        Submit Exam
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={() => setShowNextSectionConfirm(true)}
+                        className="bg-green-600 hover:bg-green-700 text-white font-bold text-xs uppercase tracking-wider py-2 h-auto"
+                      >
+                        Save & Next Section
+                        <ChevronRight className="ml-1.5 h-3.5 w-3.5" />
+                      </Button>
+                    )
+                  ) : (
+                    <Button
+                      onClick={() => setCurrentQuestionIndex((i) => i + 1)}
+                      className="bg-[#0b3d91] hover:bg-[#082d6e] text-white font-bold text-xs uppercase tracking-wider py-2 h-auto"
+                    >
+                      Save & Next
+                      <ChevronRight className="ml-1.5 h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -2261,7 +2466,7 @@ const ExamPage = () => {
           </div>
 
           {/* PROCTOR CAMERA FEED CARD */}
-          {cameraRequired && (
+          {cameraRequired && !allowLocalIdeSwitch && (
             <div className="bg-white border border-gray-200 rounded-md shadow-sm p-4 flex flex-col gap-3">
               <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex justify-between items-center">
                 <span>AI Proctor Feed</span>

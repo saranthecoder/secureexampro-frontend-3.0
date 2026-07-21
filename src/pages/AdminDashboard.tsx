@@ -35,14 +35,31 @@ import {
   Plus,
   Mail,
   RotateCcw,
+  Code2,
+  Sparkles,
+  Cpu,
+  Zap,
+  TrendingUp,
+  Clock,
+  ArrowRight,
+  Lock,
+  Unlock,
+  ChevronLeft,
+  ChevronRight,
+  Menu,
 } from "lucide-react";
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const [exams, setExams] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "exams" | "monitoring" | "settings" | "profile" | "questions" | "analysis">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "exams" | "monitoring" | "coding_eval" | "settings" | "profile" | "questions" | "analysis">("dashboard");
+  const [selectedExamCodeForCodingEval, setSelectedExamCodeForCodingEval] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
+
+  // 📐 Sidebar Collapse & Targeted Component Refresh States
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [refreshingTab, setRefreshingTab] = useState<string | null>(null);
 
   // Profile credentials state
   const [profileUsername, setProfileUsername] = useState("");
@@ -58,6 +75,19 @@ const AdminDashboard = () => {
     setProfileEmail(savedAdmin.email);
     setProfilePassword(savedAdmin.password);
   }, [activeTab]);
+
+  // Auto-select first coding_hybrid exam when opening Coding Evaluator tab
+  useEffect(() => {
+    if (activeTab === "coding_eval" && exams.length > 0) {
+      const codingExams = exams.filter((ex) => ex.assessmentType === "coding_hybrid");
+      if (codingExams.length > 0) {
+        if (!selectedExamCodeForCodingEval || !codingExams.some(e => e.examCode === selectedExamCodeForCodingEval)) {
+          setSelectedExamCodeForCodingEval(codingExams[0].examCode);
+          setMonitorExam(codingExams[0]);
+        }
+      }
+    }
+  }, [activeTab, exams, selectedExamCodeForCodingEval]);
 
   const handleUpdateProfile = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1124,67 +1154,200 @@ const AdminDashboard = () => {
     }
   };
 
-  // Poll active candidates list and DB results for ALL students in the active exam
-  useEffect(() => {
+  // 📌 TELEMETRY & RESULTS POLLING HOOK
+  const fetchUpdates = useCallback(async () => {
     if (!monitorExam) {
       setActiveCandidates({});
       return;
     }
 
-    const fetchUpdates = async () => {
-      try {
-        const res = await fetch(`${BASE_URL}/exam/results/${monitorExam.examCode}`);
-        const dbResults = res.ok ? await res.json() : [];
+    try {
+      const res = await fetch(`${BASE_URL}/exam/results/${monitorExam.examCode}`);
+      const dbResults = res.ok ? await res.json() : [];
 
-        const candidatesRes = await fetch(`${BASE_URL}/exam/active-candidates/${monitorExam.examCode}`);
-        const activeCands = candidatesRes.ok ? await candidatesRes.json() : {};
+      const candidatesRes = await fetch(`${BASE_URL}/exam/active-candidates/${monitorExam.examCode}`);
+      const activeCands = candidatesRes.ok ? await candidatesRes.json() : {};
 
-        setActiveCandidates(activeCands);
+      setActiveCandidates(activeCands);
 
-        // Merge DB results with active student sessions
-        const dbEmails = new Set(dbResults.map((r: any) => r.studentEmail?.toLowerCase()));
-        
-        const activeResults = Object.keys(activeCands)
-          .filter((email) => !dbEmails.has(email.toLowerCase()))
-          .map((email) => {
-            const candInfo = activeCands[email];
-            return {
-              _id: `active-${email}`,
-              studentName: candInfo.name || "Candidate",
-              studentEmail: email,
-              score: "In Progress",
-              positiveMarks: 0,
-              negativeMarks: 0,
-              totalMarks: monitorExam.questions ? monitorExam.questions.reduce((sum: number, q: any) => sum + (q.marks || 0), 0) : 0,
-              tabSwitchCount: candInfo.tabSwitchCount || 0,
-              faceWarningCount: candInfo.faceWarningCount || 0,
-              noiseWarningCount: candInfo.noiseWarningCount || 0,
-              internetIssueCount: candInfo.internetIssueCount || 0,
-              fullScreenExitCount: candInfo.fullScreenExitCount || 0,
-              screenShareViolationCount: candInfo.screenShareViolationCount || 0,
-              isActive: true,
-              isOffline: candInfo.isOffline,
-              submittedAt: null
-            };
-          });
+      const dbEmails = new Set(dbResults.map((r: any) => r.studentEmail?.toLowerCase()));
+      
+      const activeResults = Object.keys(activeCands)
+        .filter((email) => !dbEmails.has(email.toLowerCase()))
+        .map((email) => {
+          const candInfo = activeCands[email];
+          const paperScore = candInfo.paperLogicMarks || 0;
+          const execScore = candInfo.executionOutputMarks || 0;
+          const totalScore = paperScore + execScore;
 
-        setResults([...activeResults, ...dbResults]);
+          return {
+            _id: `active-${email}`,
+            studentName: candInfo.name || "Candidate",
+            studentEmail: email,
+            score: totalScore > 0 ? totalScore : "In Progress",
+            paperLogicMarks: paperScore,
+            executionOutputMarks: execScore,
+            totalCodingScore: totalScore,
+            assignedSet: candInfo.assignedSet || "",
+            allowLocalIdeSwitch: !!candInfo.allowLocalIdeSwitch,
+            codingPhase: candInfo.codingPhase || "lobby",
+            positiveMarks: totalScore,
+            negativeMarks: 0,
+            totalMarks: 100,
+            tabSwitchCount: candInfo.tabSwitchCount || 0,
+            faceWarningCount: candInfo.faceWarningCount || 0,
+            noiseWarningCount: candInfo.noiseWarningCount || 0,
+            internetIssueCount: candInfo.internetIssueCount || 0,
+            fullScreenExitCount: candInfo.fullScreenExitCount || 0,
+            screenShareViolationCount: candInfo.screenShareViolationCount || 0,
+            isActive: true,
+            isOffline: candInfo.isOffline,
+            submittedAt: null
+          };
+        });
 
-      } catch (err) {
-        console.error("Error fetching updates:", err);
-      } finally {
-        setLoadingResults(false);
-      }
-    };
+      // Overlay active session telemetry onto DB results for active candidates
+      const mergedDbResults = dbResults.map((r: any) => {
+        const emailKey = (r.studentEmail || "").toLowerCase();
+        const candInfo = activeCands[emailKey] || activeCands[`${monitorExam.examCode.toUpperCase()}-${emailKey}`];
 
-    fetchUpdates();
-    const intervalId = setInterval(fetchUpdates, 3000);
+        if (candInfo) {
+          const paperScore = candInfo.paperLogicMarks !== undefined ? candInfo.paperLogicMarks : r.paperLogicMarks || 0;
+          const execScore = candInfo.executionOutputMarks !== undefined ? candInfo.executionOutputMarks : r.executionOutputMarks || 0;
+          const totalScore = paperScore + execScore;
 
-    return () => clearInterval(intervalId);
+          return {
+            ...r,
+            assignedSet: candInfo.assignedSet || r.assignedSet || "",
+            allowLocalIdeSwitch: candInfo.allowLocalIdeSwitch !== undefined ? !!candInfo.allowLocalIdeSwitch : !!r.allowLocalIdeSwitch,
+            paperLogicMarks: paperScore,
+            executionOutputMarks: execScore,
+            totalCodingScore: totalScore,
+            score: totalScore > 0 ? totalScore : (r.score || 0),
+            codingPhase: candInfo.codingPhase || r.codingPhase || "lobby",
+            isActive: true,
+            isOffline: candInfo.isOffline
+          };
+        }
+        return r;
+      });
+
+      setResults([...activeResults, ...mergedDbResults]);
+
+    } catch (err) {
+      console.error("Error fetching updates:", err);
+    } finally {
+      setLoadingResults(false);
+    }
   }, [monitorExam]);
 
-  const fetchExams = async () => {
-    setLoading(true);
+  useEffect(() => {
+    if (!monitorExam) return;
+    fetchUpdates();
+    const intervalId = setInterval(fetchUpdates, 3000);
+    return () => clearInterval(intervalId);
+  }, [monitorExam, fetchUpdates]);
+
+  // 📌 CODING HYBRID EVALUATION HANDLERS
+  const handleAssignSet = async (examCode: string, email: string, assignedSet: string) => {
+    try {
+      if (!examCode || !email) return;
+      const res = await fetch(`${BASE_URL}/exam/coding/assign-set/${examCode}/${encodeURIComponent(email)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignedSet })
+      });
+      if (res.ok) {
+        await fetchUpdates();
+        Swal.fire({
+          title: "Question Set Assigned",
+          text: `Question ${assignedSet} successfully assigned to ${email}`,
+          icon: "success",
+          timer: 1500,
+          showConfirmButton: false
+        });
+      }
+    } catch (err) {
+      console.error("Assign set error:", err);
+    }
+  };
+
+  const handleUpdateCodingMarks = async (examCode: string, email: string, paperLogicMarks: number, executionOutputMarks: number) => {
+    try {
+      if (!examCode || !email) return;
+      const res = await fetch(`${BASE_URL}/exam/coding/update-marks/${examCode}/${encodeURIComponent(email)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paperLogicMarks, executionOutputMarks })
+      });
+      if (res.ok) {
+        await fetchUpdates();
+        Swal.fire({
+          title: "Marks Saved",
+          text: `Updated marks for ${email}: Paper (${paperLogicMarks}) + Output (${executionOutputMarks}) = Total (${paperLogicMarks + executionOutputMarks})`,
+          icon: "success",
+          confirmButtonColor: "#3b82f6"
+        });
+      }
+    } catch (err) {
+      console.error("Update marks error:", err);
+    }
+  };
+
+  const handleToggleIdeAccess = async (examCode: string, email: string, allowLocalIdeSwitch: boolean) => {
+    try {
+      if (!examCode || !email) return;
+      const res = await fetch(`${BASE_URL}/exam/coding/toggle-ide-access/${examCode}/${encodeURIComponent(email)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowLocalIdeSwitch })
+      });
+      if (res.ok) {
+        await fetchUpdates();
+        Swal.fire({
+          title: allowLocalIdeSwitch ? "IDE Unlocked" : "IDE Locked",
+          text: allowLocalIdeSwitch ? `Candidate ${email} can now switch to local IDE for code execution.` : `Local IDE switching locked for ${email}.`,
+          icon: "info",
+          confirmButtonColor: "#3b82f6"
+        });
+      }
+    } catch (err) {
+      console.error("Toggle IDE access error:", err);
+    }
+  };
+
+  const handleCompleteCodingExam = async (examCode: string, email: string) => {
+    if (!examCode || !email) return;
+    const confirm = await Swal.fire({
+      title: "Mark Exam Completed?",
+      text: `Finalize evaluation and email performance scorecard report to ${email}?`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonColor: "#10b981",
+      confirmButtonText: "Yes, Complete & Send Email"
+    });
+    if (confirm.isConfirmed) {
+      try {
+        const res = await fetch(`${BASE_URL}/exam/coding/complete-exam/${examCode}/${encodeURIComponent(email)}`, {
+          method: "POST"
+        });
+        if (res.ok) {
+          await fetchUpdates();
+          Swal.fire({
+            title: "Exam Completed",
+            text: `Evaluation finalized and scorecard report emailed to ${email}!`,
+            icon: "success",
+            confirmButtonColor: "#10b981"
+          });
+        }
+      } catch (err) {
+        console.error("Complete coding exam error:", err);
+      }
+    }
+  };
+
+  const fetchExams = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await fetch(`${BASE_URL}/exam/all`);
       const data = await res.json();
@@ -1200,7 +1363,23 @@ const AdminDashboard = () => {
       console.error("Failed to fetch exams");
       setExams([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+    }
+  };
+
+  const handleRefreshComponent = async (tabName: string, customTask?: () => Promise<void>) => {
+    setRefreshingTab(tabName);
+    try {
+      if (customTask) {
+        await customTask();
+      } else {
+        await fetchExams(true);
+        if (monitorExam) await fetchUpdates();
+      }
+    } catch (err) {
+      console.error("Component refresh error:", err);
+    } finally {
+      setRefreshingTab(null);
     }
   };
 
@@ -1512,125 +1691,161 @@ const AdminDashboard = () => {
       {/* ======================================= */}
       {/* 📁 SIDEBAR NAVIGATION PANEL */}
       {/* ======================================= */}
-      <aside className="w-64 h-full bg-slate-900 text-slate-300 flex flex-col justify-between p-6 flex-shrink-0 border-r border-slate-950">
-        <div className="space-y-8">
+      {/* ======================================= */}
+      {/* 📁 SIDEBAR NAVIGATION PANEL */}
+      {/* ======================================= */}
+      <aside className={`${isSidebarCollapsed ? "w-20 p-3" : "w-64 p-6"} h-full bg-slate-900 text-slate-300 flex flex-col justify-between flex-shrink-0 border-r border-slate-950 transition-all duration-300 relative z-20`}>
+        <div className="space-y-6">
           
-          {/* Logo Brand */}
-          <div className="flex items-center gap-2.5">
-            <img src="/logo.png" alt="SecureExam Pro Logo" className="h-8 w-8 object-contain" />
-            <div className="flex flex-col text-left">
-              <span className="font-bold text-white text-sm leading-none tracking-tight">SecureExam Pro</span>
-              <span className="text-[9px] text-slate-400 font-semibold tracking-wider uppercase mt-0.5">Control Center</span>
+          {/* Logo Brand & Collapse Toggle */}
+          <div className={`flex items-center ${isSidebarCollapsed ? "justify-center flex-col gap-2" : "justify-between"} pb-2 border-b border-slate-800/80`}>
+            <div className="flex items-center gap-2.5">
+              <img src="/logo.png" alt="SecureExam Pro Logo" className="h-8 w-8 object-contain" />
+              {!isSidebarCollapsed && (
+                <div className="flex flex-col text-left">
+                  <span className="font-bold text-white text-sm leading-none tracking-tight">SecureExam Pro</span>
+                  <span className="text-[9px] text-slate-400 font-semibold tracking-wider uppercase mt-0.5">Control Center</span>
+                </div>
+              )}
             </div>
+            
+            <button
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors border border-slate-700"
+              title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            >
+              {isSidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            </button>
           </div>
 
           {/* Nav Tabs */}
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <button
               onClick={() => setActiveTab("dashboard")}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
+              title="Dashboard"
+              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"} rounded-xl text-xs font-bold transition-all text-left ${
                 activeTab === "dashboard"
-                  ? "bg-blue-600 text-white shadow"
+                  ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
                   : "hover:bg-slate-800 text-slate-400 hover:text-slate-200"
               }`}
             >
-              <Shield className="h-4 w-4" />
-              Dashboard
+              <Shield className="h-4 w-4 shrink-0" />
+              {!isSidebarCollapsed && <span>Dashboard</span>}
             </button>
 
             <button
               onClick={() => setActiveTab("exams")}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
+              title="Assessments"
+              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"} rounded-xl text-xs font-bold transition-all text-left ${
                 activeTab === "exams"
-                  ? "bg-blue-600 text-white shadow"
+                  ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
                   : "hover:bg-slate-800 text-slate-400 hover:text-slate-200"
               }`}
             >
-              <Grid className="h-4 w-4" />
-              Assessments
+              <Grid className="h-4 w-4 shrink-0" />
+              {!isSidebarCollapsed && <span>Assessments</span>}
             </button>
 
             <button
-              onClick={() => {
-                setActiveTab("monitoring");
-              }}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
+              onClick={() => setActiveTab("monitoring")}
+              title="Live Monitoring"
+              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"} rounded-xl text-xs font-bold transition-all text-left ${
                 activeTab === "monitoring"
-                  ? "bg-blue-600 text-white shadow"
+                  ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
                   : "hover:bg-slate-800 text-slate-400 hover:text-slate-200"
               }`}
             >
-              <Activity className="h-4 w-4" />
-              Live Monitoring
+              <Activity className="h-4 w-4 shrink-0" />
+              {!isSidebarCollapsed && <span>Live Monitoring</span>}
+            </button>
+
+            <button
+              onClick={() => setActiveTab("coding_eval")}
+              title="Coding Evaluator"
+              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"} rounded-xl text-xs font-bold transition-all text-left ${
+                activeTab === "coding_eval"
+                  ? "bg-purple-600 text-white shadow-md shadow-purple-600/30"
+                  : "hover:bg-slate-800 text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Code2 className="h-4 w-4 shrink-0" />
+              {!isSidebarCollapsed && <span>Coding Evaluator</span>}
             </button>
 
             <button
               onClick={() => setActiveTab("questions")}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
+              title="Question Banks"
+              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"} rounded-xl text-xs font-bold transition-all text-left ${
                 activeTab === "questions"
-                  ? "bg-blue-600 text-white shadow"
+                  ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
                   : "hover:bg-slate-800 text-slate-400 hover:text-slate-200"
               }`}
             >
-              <FileText className="h-4 w-4" />
-              Question Banks
+              <FileText className="h-4 w-4 shrink-0" />
+              {!isSidebarCollapsed && <span>Question Banks</span>}
             </button>
 
             <button
               onClick={() => setActiveTab("analysis")}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
+              title="Exam Analysis"
+              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"} rounded-xl text-xs font-bold transition-all text-left ${
                 activeTab === "analysis"
-                  ? "bg-blue-600 text-white shadow"
+                  ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
                   : "hover:bg-slate-800 text-slate-400 hover:text-slate-200"
               }`}
             >
-              <BarChart3 className="h-4 w-4" />
-              Exam Analysis
+              <BarChart3 className="h-4 w-4 shrink-0" />
+              {!isSidebarCollapsed && <span>Exam Analysis</span>}
             </button>
             
             <button
               onClick={() => setActiveTab("settings")}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
+              title="Proctor Configurations"
+              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"} rounded-xl text-xs font-bold transition-all text-left ${
                 activeTab === "settings"
-                  ? "bg-blue-600 text-white shadow"
+                  ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
                   : "hover:bg-slate-800 text-slate-400 hover:text-slate-200"
               }`}
             >
-              <Settings className="h-4 w-4" />
-              Proctor Configurations
+              <Settings className="h-4 w-4 shrink-0" />
+              {!isSidebarCollapsed && <span>Proctor Configs</span>}
             </button>
 
             <button
               onClick={() => setActiveTab("profile")}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
+              title="Admin Profile"
+              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"} rounded-xl text-xs font-bold transition-all text-left ${
                 activeTab === "profile"
-                  ? "bg-blue-600 text-white shadow"
+                  ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
                   : "hover:bg-slate-800 text-slate-400 hover:text-slate-200"
               }`}
             >
-              <Users className="h-4 w-4" />
-              Admin Profile
+              <Users className="h-4 w-4 shrink-0" />
+              {!isSidebarCollapsed && <span>Admin Profile</span>}
             </button>
           </div>
 
         </div>
 
         {/* Footer profile status & Logout */}
-        <div className="space-y-4 pt-6 border-t border-slate-800">
-          <div className="flex items-center gap-3 text-left">
-            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-white text-xs uppercase">
+        <div className="space-y-4 pt-4 border-t border-slate-800">
+          <div className={`flex items-center ${isSidebarCollapsed ? "justify-center" : "gap-3 text-left"}`}>
+            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-white text-xs uppercase shrink-0">
               {(profileUsername || "A").charAt(0)}
             </div>
-            <div className="flex flex-col">
-              <span className="text-xs font-bold text-white">Examiner Profile</span>
-              <span className="text-[10px] text-slate-500 font-mono">{profileUsername || "coreadmin"}</span>
-            </div>
+            {!isSidebarCollapsed && (
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-white">Examiner Profile</span>
+                <span className="text-[10px] text-slate-500 font-mono">{profileUsername || "coreadmin"}</span>
+              </div>
+            )}
           </div>
           <Button
             onClick={handleLogout}
-            className="w-full bg-slate-800 hover:bg-slate-700/80 text-slate-300 hover:text-white border border-slate-750 text-xs font-bold py-2 rounded-xl"
+            title="Log Out"
+            className={`w-full bg-slate-800 hover:bg-slate-700/80 text-slate-300 hover:text-white border border-slate-750 text-xs font-bold py-2 rounded-xl flex items-center ${isSidebarCollapsed ? "justify-center px-0" : "justify-center gap-1.5"}`}
           >
-            <LogOut className="mr-1.5 h-3.5 w-3.5" /> Log Out
+            <LogOut className="h-3.5 w-3.5 shrink-0" /> {!isSidebarCollapsed && "Log Out"}
           </Button>
         </div>
       </aside>
@@ -1650,212 +1865,360 @@ const AdminDashboard = () => {
                   ? "Assessment Management Dashboard" 
                   : activeTab === "monitoring" 
                     ? "Student Telemetry & Proctor Monitor" 
-                    : activeTab === "questions"
-                      ? "Question Bank Manager"
-                      : activeTab === "analysis"
-                        ? "Exam Performance Analysis"
-                        : activeTab === "profile"
-                          ? "Admin Profile & Accounts"
-                          : "Platform Proctoring Controls"}
+                    : activeTab === "coding_eval"
+                      ? "Coding Hybrid Assessment Evaluator"
+                      : activeTab === "questions"
+                        ? "Question Bank Manager"
+                        : activeTab === "analysis"
+                          ? "Exam Performance Analysis"
+                          : activeTab === "profile"
+                            ? "Admin Profile & Accounts"
+                            : "Platform Proctoring Controls"}
             </h1>
             <Badge className="bg-slate-100 hover:bg-slate-100 text-slate-500 border border-slate-200 text-[10px] py-0 px-2 rounded font-semibold ml-2">
               Lobby Active
             </Badge>
           </div>
+
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={refreshingTab === "all"}
+            onClick={() => handleRefreshComponent("all")}
+            className="h-8 text-xs font-bold border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-lg flex items-center gap-1.5 shadow-sm"
+          >
+            <RotateCcw className={`h-3.5 w-3.5 text-blue-600 ${refreshingTab === "all" ? "animate-spin" : ""}`} /> Refresh All Data
+          </Button>
         </header>
 
         {/* Workspace Body */}
         <div className="p-8 flex-grow overflow-y-auto space-y-8">
           
           {activeTab === "dashboard" ? (
-            <div className="space-y-8">
-              {/* Analytics Summary Banner Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-                  <div className="text-left space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 font-bold">Assessments Built</span>
-                    <h3 className="text-2xl font-extrabold text-slate-800">{exams.length}</h3>
-                  </div>
-                  <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
-                    <FileText className="h-5 w-5" />
-                  </div>
-                </div>
+            <div className="space-y-8 text-left">
+              {/* ✨ HERO WELCOME BANNER */}
+              <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-950 via-indigo-950 to-purple-950 p-8 text-white shadow-xl border border-slate-800/80">
+                <div className="absolute top-0 right-0 -mt-10 -mr-10 w-80 h-80 rounded-full bg-purple-500/10 blur-3xl pointer-events-none" />
+                <div className="absolute bottom-0 left-1/3 -mb-10 w-60 h-60 rounded-full bg-blue-500/10 blur-2xl pointer-events-none" />
 
-                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-                  <div className="text-left space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 font-bold">Total Questions Pool</span>
-                    <h3 className="text-2xl font-extrabold text-slate-800">
-                      {totalQuestionsPool}
-                    </h3>
+                <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                  <div className="space-y-2 max-w-2xl">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-bold uppercase tracking-wider">
+                      <Sparkles className="h-3.5 w-3.5 text-purple-400" /> Control Center Overview
+                    </div>
+                    <h2 className="text-2xl lg:text-3xl font-black tracking-tight text-white">
+                      Secure Exam Pro Analytics & Management Hub
+                    </h2>
+                    <p className="text-slate-300 text-xs leading-relaxed font-normal">
+                      Monitor live student candidate telemetry, manage Coding Hybrid Set-Wise question paper distributions, unlock local IDE access, and review automated performance reports.
+                    </p>
                   </div>
-                  <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
-                    <Grid className="h-5 w-5" />
-                  </div>
-                </div>
 
-                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-                  <div className="text-left space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 font-bold">Active Test Takers</span>
-                    <h3 className="text-2xl font-extrabold text-emerald-600">
-                      {Object.keys(activeCandidates).length}
-                    </h3>
-                  </div>
-                  <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
-                    <Activity className="h-5 w-5 animate-pulse" />
-                  </div>
-                </div>
-
-                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-                  <div className="text-left space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 font-bold">Average Duration</span>
-                    <h3 className="text-2xl font-extrabold text-slate-800">
-                      {averageDuration} mins
-                    </h3>
-                  </div>
-                  <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
-                    <Settings className="h-5 w-5" />
+                  <div className="flex flex-wrap items-center gap-3 shrink-0">
+                    <Button
+                      disabled={refreshingTab === "dashboard"}
+                      onClick={() => handleRefreshComponent("dashboard")}
+                      variant="outline"
+                      className="bg-white/10 hover:bg-white/20 border-white/20 text-white font-bold text-xs h-10 px-4 rounded-xl gap-1.5"
+                    >
+                      <RotateCcw className={`h-4 w-4 text-blue-300 ${refreshingTab === "dashboard" ? "animate-spin" : ""}`} /> Refresh Metrics
+                    </Button>
+                    <CreateExamDialog onExamCreated={fetchExams} />
+                    <Button
+                      onClick={() => setActiveTab("coding_eval")}
+                      className="bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs h-10 px-5 rounded-xl shadow-lg shadow-purple-600/30 gap-1.5"
+                    >
+                      <Code2 className="h-4 w-4" /> Coding Evaluator
+                    </Button>
+                    <Button
+                      onClick={() => setActiveTab("monitoring")}
+                      variant="outline"
+                      className="bg-white/10 hover:bg-white/20 border-white/20 text-white font-bold text-xs h-10 px-4 rounded-xl gap-1.5"
+                    >
+                      <Activity className="h-4 w-4 text-emerald-400" /> Live Monitor
+                    </Button>
                   </div>
                 </div>
               </div>
 
-              {/* Analysis Graphics Block */}
+              {/* 📊 DYNAMIC METRICS OVERVIEW CARDS */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                {/* Metric 1: Total Assessments */}
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between hover:shadow-md transition-all">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-extrabold text-slate-400">Assessments Built</span>
+                    <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                      <FileText className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black text-slate-900">{exams.length}</h3>
+                    <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-1 font-bold">
+                      <span className="text-blue-600">{exams.filter(e => e.assessmentType === "coding_hybrid").length} Coding Hybrid</span>
+                      <span>•</span>
+                      <span>{exams.filter(e => e.assessmentType !== "coding_hybrid").length} Standard</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Metric 2: Coding Hybrid Drives */}
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between hover:shadow-md transition-all border-l-4 border-l-purple-600">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-extrabold text-purple-700">Coding Hybrid Drives</span>
+                    <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                      <Code2 className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black text-purple-900">
+                      {exams.filter(e => e.assessmentType === "coding_hybrid").length}
+                    </h3>
+                    <div className="text-[10px] text-purple-600 font-extrabold mt-1">
+                      Set A, B, C, D Paper Allocation
+                    </div>
+                  </div>
+                </div>
+
+                {/* Metric 3: Active Test-Takers */}
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between hover:shadow-md transition-all border-l-4 border-l-emerald-500">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-extrabold text-slate-400">Live Active Candidates</span>
+                    <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                      <Activity className="h-4 w-4 animate-pulse" />
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black text-emerald-600">
+                      {Object.keys(activeCandidates).length}
+                    </h3>
+                    <div className="text-[10px] text-emerald-700 font-extrabold mt-1 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" /> Real-Time Telemetry Active
+                    </div>
+                  </div>
+                </div>
+
+                {/* Metric 4: Total Questions Pool */}
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between hover:shadow-md transition-all">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-extrabold text-slate-400">Questions Pool</span>
+                    <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                      <Grid className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black text-slate-900">{totalQuestionsPool}</h3>
+                    <div className="text-[10px] text-slate-400 font-bold mt-1">
+                      Available across question banks
+                    </div>
+                  </div>
+                </div>
+
+                {/* Metric 5: Platform Integrity Score */}
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between hover:shadow-md transition-all">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-extrabold text-slate-400">Integrity Rating</span>
+                    <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                      <Shield className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black text-slate-900">98.6%</h3>
+                    <div className="text-[10px] text-emerald-600 font-bold mt-1 flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3" /> AI Proctor Verified
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 💻 CODING HYBRID FEATURE SPOTLIGHT CARD */}
+              <div className="p-6 rounded-2xl bg-gradient-to-r from-purple-900 via-slate-900 to-indigo-950 text-white shadow-xl border border-purple-800/60 relative overflow-hidden space-y-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-purple-800/60 pb-4">
+                  <div className="space-y-1">
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[10px] font-bold uppercase tracking-wider border border-purple-400/30">
+                      <Code2 className="h-3 w-3 text-purple-300" /> Dedicated Feature Architecture
+                    </div>
+                    <h3 className="text-lg font-black text-white">
+                      Coding Assessment Mode (Set-Wise & Hybrid Paper / IDE Workflow)
+                    </h3>
+                  </div>
+                  <Button
+                    onClick={() => setActiveTab("coding_eval")}
+                    className="bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs h-9 px-4 rounded-xl shadow-md gap-1.5 self-start md:self-center shrink-0"
+                  >
+                    Launch Coding Evaluator Desk <ArrowRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-1">
+                  <div className="p-3.5 bg-slate-950/60 rounded-xl border border-purple-800/40 space-y-1">
+                    <div className="text-[10px] font-bold uppercase text-purple-300 flex items-center gap-1">
+                      <FileText className="h-3.5 w-3.5 text-purple-400" /> Question Sets Distribution
+                    </div>
+                    <div className="text-xs text-slate-300 font-medium">Set A, B, C, D allocated manually by admin upon candidate lobby entry.</div>
+                  </div>
+
+                  <div className="p-3.5 bg-slate-950/60 rounded-xl border border-purple-800/40 space-y-1">
+                    <div className="text-[10px] font-bold uppercase text-amber-300 flex items-center gap-1">
+                      <Unlock className="h-3.5 w-3.5 text-amber-400" /> Admin IDE Access Control
+                    </div>
+                    <div className="text-xs text-slate-300 font-medium">Unlocks candidate local IDE switching and pauses tab & focus lockouts dynamically.</div>
+                  </div>
+
+                  <div className="p-3.5 bg-slate-950/60 rounded-xl border border-purple-800/40 space-y-1">
+                    <div className="text-[10px] font-bold uppercase text-emerald-300 flex items-center gap-1">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> Dual Step-by-Step Marking
+                    </div>
+                    <div className="text-xs text-slate-300 font-medium">Independent Paper Logic Marks (50 max) + Execution Output Marks (50 max).</div>
+                  </div>
+
+                  <div className="p-3.5 bg-slate-950/60 rounded-xl border border-purple-800/40 space-y-1">
+                    <div className="text-[10px] font-bold uppercase text-blue-300 flex items-center gap-1">
+                      <Mail className="h-3.5 w-3.5 text-blue-400" /> Automated Scorecard Email
+                    </div>
+                    <div className="text-xs text-slate-300 font-medium">Dispatches official performance evaluation scorecard report upon exam completion.</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 📋 LIVE ASSESSMENT DRIVES & SYSTEM HEALTH MATRIX */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 
-                {/* Left Column: Security Verdict overview */}
-                <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4 text-left lg:col-span-2">
-                  <div>
-                    <h3 className="font-bold text-slate-900 text-sm">System Security Diagnosis</h3>
-                    <p className="text-[11px] text-slate-400">Overall monitoring anomalies and security warnings logged across exam drives.</p>
-                  </div>
-                  <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-2xl space-y-3">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-500 font-semibold flex items-center gap-1.5"><AlertTriangle className="h-4 w-4 text-amber-500" /> Focus-Loss Locks (Tab switches)</span>
-                      <span className="font-extrabold text-slate-800">Strict Lockout (3 max)</span>
+                {/* Left Column (2 cols): Active Assessment Drives List */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4 lg:col-span-2">
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-sm">Active Assessment Drives Registry</h3>
+                      <p className="text-[11px] text-slate-400">Overview of configured examinations and active assessment modes.</p>
                     </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-500 font-semibold flex items-center gap-1.5"><Shield className="h-4 w-4 text-blue-500" /> Assessment Integrity Protocol</span>
-                      <span className="font-extrabold text-emerald-600">Active (Automatic Verification)</span>
-                    </div>
+                    <Button
+                      onClick={() => setActiveTab("exams")}
+                      variant="outline"
+                      className="text-xs font-bold border-slate-200 h-8 px-3 rounded-lg"
+                    >
+                      Manage All
+                    </Button>
                   </div>
 
-                  <div className="space-y-2 pt-2">
-                    <div className="text-xs font-bold text-slate-700">Assessment Breakdown:</div>
-                    <div className="max-h-[140px] overflow-y-auto space-y-2 pr-1">
-                      {exams.map((ex) => (
-                        <div key={ex._id} className="flex justify-between items-center p-2.5 rounded-xl border border-slate-100 hover:bg-slate-50 text-xs">
-                          <span className="font-semibold text-slate-700">{ex.title}</span>
-                          <span className="font-mono text-slate-400 bg-slate-100 px-2 py-0.5 rounded text-[10px]">{ex.examCode}</span>
+                  <div className="space-y-3">
+                    {exams.length === 0 ? (
+                      <div className="text-center py-8 text-slate-400 text-xs font-semibold">
+                        No assessment drives created yet. Click "Create Assessment" to build one.
+                      </div>
+                    ) : (
+                      exams.slice(0, 5).map((ex) => (
+                        <div key={ex._id} className="p-4 border border-slate-150 rounded-xl hover:border-slate-300 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/30">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-extrabold text-slate-900 text-sm">{ex.title}</span>
+                              <span className="font-mono text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-bold">{ex.examCode}</span>
+                              {ex.assessmentType === "coding_hybrid" ? (
+                                <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[10px] rounded font-extrabold uppercase py-0.5 px-2">
+                                  Coding Hybrid
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-blue-50 text-blue-700 border-blue-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
+                                  Standard
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-4 text-slate-400 text-xs font-medium">
+                              <span>Duration: {ex.duration || 60} mins</span>
+                              <span>•</span>
+                              <span>Questions: {ex.questions?.length || 0}</span>
+                              {ex.assessmentType === "coding_hybrid" && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-purple-600 font-bold">{ex.questionSets?.length || 4} Question Sets</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+                            {ex.assessmentType === "coding_hybrid" ? (
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedExamCodeForCodingEval(ex.examCode);
+                                  setMonitorExam(ex);
+                                  setActiveTab("coding_eval");
+                                }}
+                                className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold h-8 px-3 rounded-lg shadow-sm"
+                              >
+                                Evaluator Desk
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  setMonitorExam(ex);
+                                  setActiveTab("monitoring");
+                                }}
+                                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold h-8 px-3 rounded-lg shadow-sm"
+                              >
+                                Live Monitor
+                              </Button>
+                            )}
+                          </div>
                         </div>
-                      ))}
-                    </div>
+                      ))
+                    )}
                   </div>
                 </div>
 
-                {/* Right Column: Instructions / Fast actions */}
-                <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm text-left flex flex-col justify-between row-span-2">
+                {/* Right Column (1 col): AI Proctoring Security Diagnostics */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4 flex flex-col justify-between">
                   <div className="space-y-4">
-                    <h3 className="font-bold text-slate-900 text-sm">Integrity Center</h3>
-                    <p className="text-xs text-slate-400 leading-relaxed">Ensure academic standards. Terminate any anomalous sessions directly from the Live Monitoring module in the sidebar.</p>
-                    
-                    {/* Visual Gauge Indicator */}
-                    <div className="py-4 border-y border-slate-100 space-y-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 font-extrabold text-xs shadow-sm">
-                          98%
-                        </div>
-                        <div className="flex flex-col">
-                          <span className="text-xs font-bold text-slate-700">Integrity Score</span>
-                          <span className="text-[10px] text-slate-400">Average compliance rating</span>
-                        </div>
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-sm">System Security & Proctor Diagnosis</h3>
+                      <p className="text-[11px] text-slate-400 mt-0.5">Real-time proctoring enforcement controls.</p>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-3">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-600 font-semibold flex items-center gap-1.5">
+                          <AlertTriangle className="h-4 w-4 text-amber-500" /> Focus Lockouts
+                        </span>
+                        <span className="font-extrabold text-slate-800 text-[11px]">3 Max Exits</span>
                       </div>
 
-                      <div className="space-y-1.5 pt-2">
-                        <div className="flex justify-between text-[10px] font-bold text-slate-500">
-                          <span>Focus anomalies</span>
-                          <span className="text-slate-400 font-mono">Low risk (2.4%)</span>
-                        </div>
-                        <div className="flex justify-between text-[10px] font-bold text-slate-500">
-                          <span>Exam lockouts</span>
-                          <span className="text-slate-400 font-mono">0 active blockouts</span>
-                        </div>
-                        <div className="flex justify-between text-[10px] font-bold text-slate-500">
-                          <span>Flagged switches</span>
-                          <span className="text-slate-400 font-mono">Safe thresholds</span>
-                        </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-600 font-semibold flex items-center gap-1.5">
+                          <Cpu className="h-4 w-4 text-purple-600" /> Head Motion Scan
+                        </span>
+                        <span className="font-extrabold text-purple-700 text-[11px]">Sub-pixel Heuristic</span>
                       </div>
-                    </div>
-                  </div>
-                  <div className="space-y-2.5 pt-4">
-                    <Button 
-                      onClick={() => setActiveTab("exams")} 
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold h-10 rounded-xl shadow-sm"
-                    >
-                      Manage Assessments
-                    </Button>
-                    <Button 
-                      onClick={() => setActiveTab("monitoring")} 
-                      variant="outline" 
-                      className="w-full border-slate-200 text-xs font-bold h-10 rounded-xl shadow-sm"
-                    >
-                      Open Live Telemetry
-                    </Button>
-                  </div>
-                </div>
 
-                {/* Ingress Traffic Analysis (LMS Gateway integration) */}
-                <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4 text-left lg:col-span-2">
-                  <div>
-                    <h3 className="font-bold text-slate-900 text-sm">Infrastructure Traffic & Node Gateway</h3>
-                    <p className="text-[11px] text-slate-400">Real-time gateway load tracking and inbound API requests volume.</p>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                      <span className="text-[9px] uppercase font-bold text-slate-400">Total API Traffic</span>
-                      <div className="text-sm font-extrabold text-slate-800 mt-0.5">
-                        {Object.keys(activeCandidates).length * 12 + 18} req/min
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-600 font-semibold flex items-center gap-1.5">
+                          <Shield className="h-4 w-4 text-blue-600" /> Local IDE Bypass
+                        </span>
+                        <span className="font-extrabold text-emerald-600 text-[11px]">Admin Controlled</span>
                       </div>
                     </div>
-                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                      <span className="text-[9px] uppercase font-bold text-slate-400">DB Response Speed</span>
-                      <div className="text-sm font-extrabold text-blue-600 mt-0.5">4ms</div>
-                    </div>
-                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                      <span className="text-[9px] uppercase font-bold text-slate-400">API Gateway CPU</span>
-                      <div className="text-sm font-extrabold text-slate-800 mt-0.5">14%</div>
-                    </div>
-                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                      <span className="text-[9px] uppercase font-bold text-slate-400">Cluster Status</span>
-                      <div className="text-sm font-extrabold text-emerald-600 mt-0.5 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                        Healthy
-                      </div>
-                    </div>
-                  </div>
 
-                  <div className="space-y-3 pt-2">
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between text-xs font-bold text-slate-600">
+                    <div className="space-y-2 pt-1 text-xs">
+                      <div className="flex justify-between font-bold text-slate-600">
                         <span>Gateway Ingress Load</span>
-                        <span>{(Object.keys(activeCandidates).length * 4 + 12)}%</span>
+                        <span className="text-blue-600 font-mono">{(Object.keys(activeCandidates).length * 4 + 12)}%</span>
                       </div>
                       <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 transition-all duration-500" 
+                        <div
+                          className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 transition-all duration-500"
                           style={{ width: `${Math.min(100, Object.keys(activeCandidates).length * 4 + 12)}%` }}
                         />
                       </div>
                     </div>
+                  </div>
 
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between text-xs font-bold text-slate-600">
-                        <span>Memory Allocation (Heap)</span>
-                        <span>184MB / 512MB</span>
-                      </div>
-                      <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-600" style={{ width: "36%" }} />
-                      </div>
-                    </div>
+                  <div className="pt-4 border-t border-slate-100 space-y-2">
+                    <Button
+                      onClick={() => setActiveTab("settings")}
+                      variant="outline"
+                      className="w-full border-slate-200 text-xs font-bold h-9 rounded-xl shadow-sm gap-1.5"
+                    >
+                      <Settings className="h-3.5 w-3.5" /> Configure AI Proctor Controls
+                    </Button>
                   </div>
                 </div>
 
@@ -1922,8 +2285,19 @@ const AdminDashboard = () => {
                     />
                   </div>
 
-                  {/* Creation button */}
-                  <CreateExamDialog onExamCreated={fetchExams} />
+                  {/* Creation button & Refresh */}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={refreshingTab === "exams"}
+                      onClick={() => handleRefreshComponent("exams")}
+                      className="h-10 text-xs font-bold border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-xl flex items-center gap-1.5 shadow-sm"
+                    >
+                      <RotateCcw className={`h-3.5 w-3.5 text-blue-600 ${refreshingTab === "exams" ? "animate-spin" : ""}`} /> Refresh List
+                    </Button>
+                    <CreateExamDialog onExamCreated={fetchExams} />
+                  </div>
                 </div>
 
                 {/* Table element */}
@@ -2088,14 +2462,25 @@ const AdminDashboard = () => {
                       <h3 className="text-sm font-bold text-slate-900">Registered Candidates Status</h3>
                       <p className="text-[11px] text-slate-400 mt-1 font-medium">Detailed logs of candidate test submissions and live telemetry tracking.</p>
                     </div>
-                    {results.length > 0 && (
+                    <div className="flex items-center gap-2">
                       <Button
-                        onClick={() => handleExportResults(monitorExam.examCode)}
-                        className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 h-9 text-xs font-semibold rounded-xl px-4 shadow-sm"
+                        size="sm"
+                        variant="outline"
+                        disabled={refreshingTab === "monitoring"}
+                        onClick={() => handleRefreshComponent("monitoring", fetchUpdates)}
+                        className="h-9 px-3 text-xs font-bold border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-xl flex items-center gap-1.5 shadow-sm"
                       >
-                        <Download className="h-4 w-4" /> Export Results Sheet
+                        <RotateCcw className={`h-3.5 w-3.5 text-blue-600 ${refreshingTab === "monitoring" ? "animate-spin" : ""}`} /> Refresh Telemetry
                       </Button>
-                    )}
+                      {results.length > 0 && (
+                        <Button
+                          onClick={() => handleExportResults(monitorExam.examCode)}
+                          className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 h-9 text-xs font-semibold rounded-xl px-4 shadow-sm"
+                        >
+                          <Download className="h-4 w-4" /> Export Results Sheet
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="pt-2">
@@ -2116,9 +2501,8 @@ const AdminDashboard = () => {
                             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 uppercase font-bold text-[10px] tracking-wider">
                               <th className="px-6 py-4">Student Name</th>
                               <th className="px-6 py-4">Email Address</th>
+                              {monitorExam?.assessmentType === "coding_hybrid" && <th className="px-6 py-4 text-center">Assigned Set</th>}
                               <th className="px-6 py-4 text-center">Net Score</th>
-                              <th className="px-6 py-4 text-center">Positive Marks</th>
-                              <th className="px-6 py-4 text-center">Negative Marks</th>
                               <th className="px-6 py-4 text-center">Behavior Logs (Tab/Face/Noise/FS/Net)</th>
                               <th className="px-6 py-4 text-center">Proctor Status</th>
                               <th className="px-6 py-4 text-right">Submitted At</th>
@@ -2135,8 +2519,48 @@ const AdminDashboard = () => {
                                   )}
                                 </td>
                                 <td className="px-6 py-4 text-slate-500">{r.studentEmail || "N/A"}</td>
+
+                                {/* ASSIGNED SET COLUMN & SELECTOR — Coding Hybrid only */}
+                                {monitorExam?.assessmentType === "coding_hybrid" && (
+                                <td className="px-6 py-4 text-center">
+                                  <select
+                                    value={r.assignedSet || ""}
+                                    onChange={(e) => handleAssignSet(monitorExam?.examCode || "", r.studentEmail, e.target.value)}
+                                    className={`px-2.5 py-1.5 text-xs font-extrabold rounded-lg border focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm cursor-pointer transition-all ${
+                                      r.assignedSet
+                                        ? "bg-purple-600 text-white border-purple-700 font-black shadow"
+                                        : "bg-amber-50 text-amber-900 border-amber-300 font-bold"
+                                    }`}
+                                  >
+                                    <option value="" className="bg-white text-slate-700">-- Select Question Set --</option>
+                                    {monitorExam?.questionSets?.length > 0 ? (
+                                      monitorExam.questionSets.map((qs: any) => (
+                                        <option key={qs.setName} value={qs.setName} className="bg-white text-slate-800 font-bold">{qs.setName}</option>
+                                      ))
+                                    ) : (
+                                      <>
+                                        <option value="Set A" className="bg-white text-slate-800 font-bold">Set A</option>
+                                        <option value="Set B" className="bg-white text-slate-800 font-bold">Set B</option>
+                                        <option value="Set C" className="bg-white text-slate-800 font-bold">Set C</option>
+                                        <option value="Set D" className="bg-white text-slate-800 font-bold">Set D</option>
+                                      </>
+                                    )}
+                                  </select>
+                                </td>
+                                )}
+
                                 <td className="px-6 py-4 text-center font-extrabold text-blue-600">
-                                  {r.isActive ? (
+                                  {monitorExam?.assessmentType === "coding_hybrid" ? (
+                                    <div className="flex flex-col items-center justify-center gap-0.5 text-[11px]">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold border border-emerald-200">Paper: {r.paperLogicMarks || 0}</span>
+                                        <span className="text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded font-bold border border-purple-200">Exec: {r.executionOutputMarks || 0}</span>
+                                      </div>
+                                      <span className="text-slate-900 font-black text-xs mt-0.5">
+                                        Total: {(r.paperLogicMarks || 0) + (r.executionOutputMarks || 0)} / 100
+                                      </span>
+                                    </div>
+                                  ) : r.isActive ? (
                                     <span className="text-slate-400 font-semibold italic">In Progress</span>
                                   ) : r.terminated ? (
                                     <span className="text-red-650 font-extrabold" title={`${r.score} / ${r.totalMarks}`}>Disqualified</span>
@@ -2144,12 +2568,7 @@ const AdminDashboard = () => {
                                     `${r.score} / ${r.totalMarks}`
                                   )}
                                 </td>
-                                <td className="px-6 py-4 text-center font-bold text-emerald-600">
-                                  {r.isActive ? "-" : `+${r.positiveMarks || 0}`}
-                                </td>
-                                <td className="px-6 py-4 text-center font-bold text-red-650">
-                                  {r.isActive ? "-" : `-${r.negativeMarks || 0}`}
-                                </td>
+
                                 <td className="px-6 py-4 text-center text-[10px] font-semibold text-slate-500">
                                   <div className="inline-flex flex-col items-start gap-0.5">
                                     <div>Tab Exits: <span className={r.tabSwitchCount > 0 ? "text-amber-600 font-black text-xs" : "font-mono"}>{r.tabSwitchCount || 0}</span></div>
@@ -2160,22 +2579,38 @@ const AdminDashboard = () => {
                                   </div>
                                 </td>
                                 <td className="px-6 py-4 text-center">
-                                  {r.isActive ? (
-                                    <Badge className="bg-blue-50 text-blue-700 border border-blue-100 text-[10px] rounded font-bold uppercase py-0.5 px-2 animate-pulse">
-                                      Writing
-                                    </Badge>
-                                  ) : r.terminated ? (
-                                    <Badge className="bg-red-50 text-red-700 border border-red-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
-                                      {r.terminatedByAdmin ? "Disqualified (Admin)" : r.faceTurnTerminated ? "Disqualified (Face)" : "Disqualified (Tab)"}
-                                    </Badge>
-                                  ) : (r.tabSwitched || (r.faceWarningCount && r.faceWarningCount > 0)) ? (
-                                    <Badge className="bg-amber-50 text-amber-700 border border-amber-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
-                                      Warning Flagged
-                                    </Badge>
+                                  {monitorExam?.assessmentType === "coding_hybrid" ? (
+                                    r.codingPhase === "ide_unlocked" ? (
+                                      <Badge className="bg-purple-100 text-purple-800 border border-purple-300 text-[10px] rounded font-extrabold uppercase py-0.5 px-2 animate-pulse">
+                                        IDE Unlocked
+                                      </Badge>
+                                    ) : r.isActive ? (
+                                      <Badge className="bg-blue-50 text-blue-700 border border-blue-100 text-[10px] rounded font-bold uppercase py-0.5 px-2 animate-pulse">
+                                        {r.assignedSet ? `Writing (${r.assignedSet})` : "In Lobby"}
+                                      </Badge>
+                                    ) : r.terminated ? (
+                                      <Badge className="bg-red-50 text-red-700 border border-red-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
+                                        {r.terminatedByAdmin ? "Disqualified (Admin)" : r.faceTurnTerminated ? "Disqualified (Face)" : "Disqualified (Tab)"}
+                                      </Badge>
+                                    ) : (
+                                      <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
+                                        Evaluated
+                                      </Badge>
+                                    )
                                   ) : (
-                                    <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
-                                      Clean
-                                    </Badge>
+                                    r.isActive ? (
+                                      <Badge className="bg-blue-50 text-blue-700 border border-blue-100 text-[10px] rounded font-bold uppercase py-0.5 px-2 animate-pulse">
+                                        Active
+                                      </Badge>
+                                    ) : r.terminated ? (
+                                      <Badge className="bg-red-50 text-red-700 border border-red-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
+                                        {r.terminatedByAdmin ? "Disqualified (Admin)" : r.faceTurnTerminated ? "Disqualified (Face)" : "Disqualified (Tab)"}
+                                      </Badge>
+                                    ) : (
+                                      <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
+                                        Submitted
+                                      </Badge>
+                                    )
                                   )}
                                 </td>
                                 <td className="px-6 py-4 text-slate-400 text-right">
@@ -2202,12 +2637,256 @@ const AdminDashboard = () => {
                                   </div>
                                 </td>
                               </tr>
-                            ))}`
+                            ))}
                           </tbody>
                         </table>
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+            </div>
+          ) : activeTab === "coding_eval" ? (
+            /* ======================================= */
+            /* 💻 DEDICATED CODING EVALUATOR PANEL */
+            /* ======================================= */
+            <div className="space-y-6 text-left">
+              {/* EXAM SELECTION & BANNER */}
+              <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-sm space-y-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div>
+                    <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
+                      <Code2 className="h-5 w-5 text-purple-600" />
+                      Coding Hybrid Assessment Evaluator & Marks Desk
+                    </h2>
+                    <p className="text-xs text-slate-400 font-medium leading-relaxed mt-0.5">
+                      Control Local IDE unlocks, enter step-by-step paper/execution marks, and finalize candidate evaluations.
+                    </p>
+                  </div>
+                  <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-xs font-bold px-3 py-1 rounded-lg self-start md:self-center">
+                    Coding Hybrid Drives Only
+                  </Badge>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-600">Select Coding Hybrid Assessment Exam</Label>
+                  {exams.filter(ex => ex.assessmentType === "coding_hybrid").length === 0 ? (
+                    <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl text-xs font-semibold text-purple-900 flex items-center justify-between gap-4">
+                      <span>No Coding Assessment Drives created yet. Create a new exam with type <strong>"Coding Assessment (Hybrid Set-Wise)"</strong>.</span>
+                      <CreateExamDialog onExamCreated={fetchExams} />
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedExamCodeForCodingEval || (monitorExam?.assessmentType === "coding_hybrid" ? monitorExam.examCode : "")}
+                      onChange={(e) => {
+                        const code = e.target.value;
+                        setSelectedExamCodeForCodingEval(code);
+                        const found = exams.find(ex => ex.examCode === code);
+                        if (found) setMonitorExam(found);
+                      }}
+                      className="w-full max-w-md h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm cursor-pointer"
+                    >
+                      {exams
+                        .filter((ex) => ex.assessmentType === "coding_hybrid")
+                        .map((ex) => (
+                          <option key={ex._id} value={ex.examCode}>
+                            {ex.title} ({ex.examCode}) — {ex.questionSets?.length || 4} Question Sets
+                          </option>
+                        ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              {/* CANDIDATE EVALUATION CARDS & TABLE */}
+              {monitorExam && monitorExam.assessmentType === "coding_hybrid" ? (
+                <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-sm space-y-4">
+                  {/* TOP SUMMARY STATS FOR SELECTED CODING EXAM */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pb-2">
+                    <div className="p-3 bg-purple-50/50 border border-purple-100 rounded-xl">
+                      <span className="text-[9px] uppercase font-extrabold text-purple-600">Question Sets</span>
+                      <div className="text-sm font-black text-purple-900 mt-0.5">
+                        {monitorExam.questionSets?.length || 4} Sets (A, B, C, D)
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                      <span className="text-[9px] uppercase font-extrabold text-slate-400">Total Registered</span>
+                      <div className="text-sm font-black text-slate-800 mt-0.5">
+                        {results.length} Candidates
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                      <span className="text-[9px] uppercase font-extrabold text-slate-400">IDE Access Unlocked</span>
+                      <div className="text-sm font-black text-purple-700 mt-0.5">
+                        {results.filter(r => r.allowLocalIdeSwitch).length} Candidates
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                      <span className="text-[9px] uppercase font-extrabold text-slate-400">Graded Submissions</span>
+                      <div className="text-sm font-black text-emerald-600 mt-0.5">
+                        {results.filter(r => (r.paperLogicMarks || 0) + (r.executionOutputMarks || 0) > 0).length} Candidates
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">
+                        Candidate Grading Matrix: {monitorExam.title} ({monitorExam.examCode})
+                      </h3>
+                      <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                        Manage IDE unlocks, paper logic (50 max), execution output (50 max), and complete exam dispatch.
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      disabled={refreshingTab === "coding_eval"}
+                      className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold h-8 px-3 rounded-lg shadow-sm gap-1"
+                      onClick={() => handleRefreshComponent("coding_eval", fetchUpdates)}
+                    >
+                      <RotateCcw className={`h-3.5 w-3.5 ${refreshingTab === "coding_eval" ? "animate-spin" : ""}`} /> Refresh List
+                    </Button>
+                  </div>
+
+                  {results.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400 text-xs font-semibold">
+                      No candidates have entered this coding assessment lobby yet.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white">
+                      <table className="w-full text-slate-700 text-xs text-left">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 uppercase font-bold text-[10px] tracking-wider">
+                            <th className="px-6 py-4">Student Name</th>
+                            <th className="px-6 py-4">Email Address</th>
+                            <th className="px-6 py-4 text-center">Assigned Set</th>
+                            <th className="px-6 py-4 text-center">Graded Marks Breakdown</th>
+                            <th className="px-6 py-4 text-center">IDE & Phase Status</th>
+                            <th className="px-6 py-4 text-right">Evaluation Controls</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {results.map((r) => (
+                            <tr key={r._id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-4 font-bold text-slate-800 flex items-center gap-2">
+                                {r.studentName}
+                                {r.isActive && (
+                                  <span className={`w-2 h-2 rounded-full ${r.isOffline ? "bg-red-400" : "bg-emerald-500 animate-pulse"}`} title={r.isOffline ? "Offline" : "Active Online"} />
+                                )}
+                              </td>
+                              <td className="px-6 py-4 text-slate-500 font-mono text-[11px]">{r.studentEmail || "N/A"}</td>
+                              
+                              <td className="px-6 py-4 text-center">
+                                <span className={`px-2.5 py-1 text-xs font-black rounded-lg border ${
+                                  r.assignedSet
+                                    ? "bg-purple-600 text-white border-purple-700 shadow-sm"
+                                    : "bg-amber-50 text-amber-800 border-amber-250 font-bold"
+                                }`}>
+                                  {r.assignedSet || "Awaiting Set"}
+                                </span>
+                              </td>
+
+                              <td className="px-6 py-4 text-center">
+                                <div className="flex flex-col items-center justify-center gap-1">
+                                  <div className="flex items-center gap-2 text-[11px]">
+                                    <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-bold border border-emerald-200">
+                                      Paper: {r.paperLogicMarks || 0} / 50
+                                    </span>
+                                    <span className="text-purple-700 bg-purple-50 px-2 py-0.5 rounded font-bold border border-purple-200">
+                                      Exec: {r.executionOutputMarks || 0} / 50
+                                    </span>
+                                  </div>
+                                  <span className="text-slate-900 font-extrabold text-xs">
+                                    Total: {(r.paperLogicMarks || 0) + (r.executionOutputMarks || 0)} / 100
+                                  </span>
+                                </div>
+                              </td>
+
+                              <td className="px-6 py-4 text-center">
+                                {r.allowLocalIdeSwitch ? (
+                                  <Badge className="bg-purple-100 text-purple-800 border border-purple-300 text-[10px] rounded font-black uppercase py-0.5 px-2.5 animate-pulse">
+                                    IDE Access Unlocked
+                                  </Badge>
+                                ) : r.isActive ? (
+                                  <Badge className="bg-blue-50 text-blue-700 border border-blue-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
+                                    {r.assignedSet ? `Writing (${r.assignedSet})` : "In Lobby"}
+                                  </Badge>
+                                ) : (
+                                  <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
+                                    Completed & Graded
+                                  </Badge>
+                                )}
+                              </td>
+
+                              <td className="px-6 py-4 text-right">
+                                <div className="flex justify-end items-center gap-2">
+                                  <Button
+                                    size="sm"
+                                    className={`h-8 px-3 text-xs font-extrabold rounded-xl shadow-sm ${
+                                      r.allowLocalIdeSwitch
+                                        ? "bg-amber-500 hover:bg-amber-600 text-white"
+                                        : "bg-purple-600 hover:bg-purple-700 text-white"
+                                    }`}
+                                    onClick={() => handleToggleIdeAccess(monitorExam?.examCode || "", r.studentEmail, !r.allowLocalIdeSwitch)}
+                                  >
+                                    {r.allowLocalIdeSwitch ? "Lock IDE" : "Unlock IDE"}
+                                  </Button>
+
+                                  <Button
+                                    size="sm"
+                                    className="h-8 px-3 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-sm"
+                                    onClick={async () => {
+                                      const { value: formValues } = await Swal.fire({
+                                        title: `Grade Candidate: ${r.studentName}`,
+                                        html:
+                                          `<div class="text-left text-xs space-y-3 font-bold text-slate-700">` +
+                                          `<div><label class="block mb-1">Paper Logic Marks (Max: 50)</label><input id="swal-paper" type="number" class="w-full h-9 px-3 border rounded-lg text-sm bg-slate-50" value="${r.paperLogicMarks || 0}" /></div>` +
+                                          `<div><label class="block mb-1">Execution Output Marks (Max: 50)</label><input id="swal-exec" type="number" class="w-full h-9 px-3 border rounded-lg text-sm bg-slate-50" value="${r.executionOutputMarks || 0}" /></div>` +
+                                          `</div>`,
+                                        focusConfirm: false,
+                                        showCancelButton: true,
+                                        confirmButtonText: "Save Marks",
+                                        confirmButtonColor: "#3b82f6",
+                                        preConfirm: () => {
+                                          return [
+                                            (document.getElementById("swal-paper") as HTMLInputElement).value,
+                                            (document.getElementById("swal-exec") as HTMLInputElement).value
+                                          ];
+                                        }
+                                      });
+
+                                      if (formValues) {
+                                        const pMarks = parseInt(formValues[0]) || 0;
+                                        const eMarks = parseInt(formValues[1]) || 0;
+                                        await handleUpdateCodingMarks(monitorExam?.examCode || "", r.studentEmail, pMarks, eMarks);
+                                      }
+                                    }}
+                                  >
+                                    Grade Marks
+                                  </Button>
+
+                                  <Button
+                                    size="sm"
+                                    className="h-8 px-3 text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm"
+                                    onClick={() => handleCompleteCodingExam(monitorExam?.examCode || "", r.studentEmail)}
+                                  >
+                                    Complete
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-20 text-slate-400 bg-white border border-slate-200 rounded-2xl shadow-sm text-xs font-semibold">
+                  Please select a Coding Hybrid assessment exam above to open the Evaluation Desk.
                 </div>
               )}
             </div>
@@ -2217,30 +2896,41 @@ const AdminDashboard = () => {
             /* ======================================= */
             <div className="space-y-4">
               <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-sm text-left">
-                <div className="mb-4">
-                  <label className="text-xs font-bold text-slate-500 block mb-1.5">Choose Assessment Exam</label>
-                  <select
-                    value={selectedExamCodeForQuestions}
-                    onChange={(e) => {
-                      const code = e.target.value;
-                      setSelectedExamCodeForQuestions(code);
-                      const selected = exams.find(ex => ex.examCode === code);
-                      if (selected) {
-                        setManagingExamQuestions(selected);
-                        setEditingQuestionIndex(null);
-                      } else {
-                        setManagingExamQuestions(null);
-                      }
-                    }}
-                    className="w-full max-w-md h-10 px-3 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 block mb-1.5">Choose Assessment Exam</label>
+                    <select
+                      value={selectedExamCodeForQuestions}
+                      onChange={(e) => {
+                        const code = e.target.value;
+                        setSelectedExamCodeForQuestions(code);
+                        const selected = exams.find(ex => ex.examCode === code);
+                        if (selected) {
+                          setManagingExamQuestions(selected);
+                          setEditingQuestionIndex(null);
+                        } else {
+                          setManagingExamQuestions(null);
+                        }
+                      }}
+                      className="w-full min-w-[280px] max-w-md h-10 px-3 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">-- Select an Assessment Exam --</option>
+                      {exams.map((ex) => (
+                        <option key={ex._id} value={ex.examCode}>
+                          {ex.title} ({ex.examCode})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={refreshingTab === "questions"}
+                    onClick={() => handleRefreshComponent("questions")}
+                    className="h-10 text-xs font-bold border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-xl flex items-center gap-1.5 shadow-sm self-start sm:self-end"
                   >
-                    <option value="">-- Select an Assessment Exam --</option>
-                    {exams.map((ex) => (
-                      <option key={ex._id} value={ex.examCode}>
-                        {ex.title} ({ex.examCode})
-                      </option>
-                    ))}
-                  </select>
+                    <RotateCcw className={`h-3.5 w-3.5 text-blue-600 ${refreshingTab === "questions" ? "animate-spin" : ""}`} /> Refresh Question Banks
+                  </Button>
                 </div>
               </div>
 
@@ -2433,22 +3123,37 @@ const AdminDashboard = () => {
                     </select>
                   </div>
                   
-                  {viewingExamAnalysis && analysisResults.length > 0 && (
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={handleExportToExcel}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-10 px-4 rounded-xl flex items-center gap-1.5 shadow"
-                      >
-                        <Download className="h-4 w-4" /> Export Performance Report
-                      </Button>
-                      <Button
-                        onClick={() => handleManualSendAllEmails(selectedExamCodeForAnalysis)}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-10 px-4 rounded-xl flex items-center gap-1.5 shadow"
-                      >
-                        <Mail className="h-4 w-4" /> Email All Scorecards
-                      </Button>
-                    </div>
-                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={refreshingTab === "analysis"}
+                      onClick={() => handleRefreshComponent("analysis", async () => {
+                        await fetchExams(true);
+                        if (viewingExamAnalysis) await handleOpenAnalysis(viewingExamAnalysis);
+                      })}
+                      className="h-10 text-xs font-bold border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-xl flex items-center gap-1.5 shadow-sm"
+                    >
+                      <RotateCcw className={`h-3.5 w-3.5 text-blue-600 ${refreshingTab === "analysis" ? "animate-spin" : ""}`} /> Refresh Analysis
+                    </Button>
+
+                    {viewingExamAnalysis && analysisResults.length > 0 && (
+                      <>
+                        <Button
+                          onClick={handleExportToExcel}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-10 px-4 rounded-xl flex items-center gap-1.5 shadow"
+                        >
+                          <Download className="h-4 w-4" /> Export Performance Report
+                        </Button>
+                        <Button
+                          onClick={() => handleManualSendAllEmails(selectedExamCodeForAnalysis)}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-10 px-4 rounded-xl flex items-center gap-1.5 shadow"
+                        >
+                          <Mail className="h-4 w-4" /> Email All Scorecards
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -2860,20 +3565,34 @@ const AdminDashboard = () => {
               </div>
               
               <div className="space-y-4 pt-2">
-                <div className="mb-4">
-                  <label className="text-xs font-bold text-slate-500 block mb-1.5">Choose Assessment Exam</label>
-                  <select
-                    value={configExamCode}
-                    onChange={(e) => handleSelectConfigExam(e.target.value)}
-                    className="w-full max-w-md h-10 px-3 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-750 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 block mb-1.5">Choose Assessment Exam</label>
+                    <select
+                      value={configExamCode}
+                      onChange={(e) => handleSelectConfigExam(e.target.value)}
+                      className="w-full min-w-[280px] max-w-md h-10 px-3 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-750 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">-- Select an Assessment Exam --</option>
+                      {exams.map((ex) => (
+                        <option key={ex._id} value={ex.examCode}>
+                          {ex.title} ({ex.examCode})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={refreshingTab === "settings"}
+                    onClick={() => handleRefreshComponent("settings", async () => {
+                      await fetchExams(true);
+                      if (configExamCode) handleSelectConfigExam(configExamCode);
+                    })}
+                    className="h-10 text-xs font-bold border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-xl flex items-center gap-1.5 shadow-sm self-start sm:self-end"
                   >
-                    <option value="">-- Select an Assessment Exam --</option>
-                    {exams.map((ex) => (
-                      <option key={ex._id} value={ex.examCode}>
-                        {ex.title} ({ex.examCode})
-                      </option>
-                    ))}
-                  </select>
+                    <RotateCcw className={`h-3.5 w-3.5 text-blue-600 ${refreshingTab === "settings" ? "animate-spin" : ""}`} /> Refresh Configs
+                  </Button>
                 </div>
 
                 {configExamCode ? (

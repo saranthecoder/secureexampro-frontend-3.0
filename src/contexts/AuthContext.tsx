@@ -33,15 +33,37 @@ import BASE_URL from "@/config/api";
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children
 }) => {
-  const [user, setUser] = useState<User | null>(null);
-
-  // 🔥 Restore session from localStorage on refresh
-  useEffect(() => {
+  const [user, setUser] = useState<User | null>(() => {
     const storedUser = localStorage.getItem("user");
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
+        if (parsedUser.loginTimestamp && (Date.now() - parsedUser.loginTimestamp < TWELVE_HOURS_MS)) {
+          return parsedUser;
+        } else {
+          localStorage.removeItem("user");
+        }
+      } catch (err) {
+        localStorage.removeItem("user");
+      }
     }
-  }, []);
+    return null;
+  });
+
+  // Verify 12-hour expiration on interval
+  useEffect(() => {
+    if (!user || !user.loginTimestamp) return;
+    const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
+    const checkExpiry = () => {
+      if (Date.now() - user.loginTimestamp! >= TWELVE_HOURS_MS) {
+        localStorage.removeItem("user");
+        setUser(null);
+      }
+    };
+    const interval = setInterval(checkExpiry, 60000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   // ✅ LOGIN
   const login = useCallback(

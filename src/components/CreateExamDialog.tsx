@@ -36,13 +36,47 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
   const [endTime, setEndTime] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [parsedQuestions, setParsedQuestions] = useState<any[]>([]);
-
   const [questionsCount, setQuestionsCount] = useState(0);
   const [totalMarks, setTotalMarks] = useState(0);
   const [parseError, setParseError] = useState("");
   const [loading, setLoading] = useState(false);
   const [cameraMonitor, setCameraMonitor] = useState(false);
   const [dispatchPolicy, setDispatchPolicy] = useState("none");
+  const [assessmentType, setAssessmentType] = useState<"standard" | "coding_hybrid">("standard");
+  const [questionSets, setQuestionSets] = useState<any[]>([
+    {
+      setName: "Set A",
+      paperMaxMarks: 50,
+      executionMaxMarks: 50,
+      problemStatement: "Set A Problem 1: Write a C++/Java/Python program to implement a Queue using Stacks.",
+      sampleInputOutput: "Input: Enqueue(10), Enqueue(20), Dequeue()\nOutput: Dequeued Element: 10",
+      instructions: "1. Write logic on physical paper.\n2. Execute code in local IDE.",
+      problems: [
+        {
+          title: "Problem 1",
+          problemStatement: "Set A Problem 1: Write a C++/Java/Python program to implement a Queue using Stacks.",
+          sampleInputOutput: "Input: Enqueue(10), Enqueue(20), Dequeue()\nOutput: Dequeued Element: 10",
+          instructions: "1. Write logic on physical paper.\n2. Execute code in local IDE."
+        }
+      ]
+    },
+    {
+      setName: "Set B",
+      paperMaxMarks: 50,
+      executionMaxMarks: 50,
+      problemStatement: "Set B Problem 1: Write a C++/Java/Python program to find the Longest Palindromic Substring.",
+      sampleInputOutput: "Input: 'babad'\nOutput: 'bab' or 'aba'",
+      instructions: "1. Write logic on physical paper.\n2. Execute code in local IDE.",
+      problems: [
+        {
+          title: "Problem 1",
+          problemStatement: "Set B Problem 1: Write a C++/Java/Python program to find the Longest Palindromic Substring.",
+          sampleInputOutput: "Input: 'babad'\nOutput: 'bab' or 'aba'",
+          instructions: "1. Write logic on physical paper.\n2. Execute code in local IDE."
+        }
+      ]
+    }
+  ]);
 
   const resetForm = () => {
     setTitle("");
@@ -57,6 +91,7 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
     setParseError("");
     setCameraMonitor(false);
     setDispatchPolicy("none");
+    setAssessmentType("standard");
   };
 
   // Just preview parse (backend still validates)
@@ -198,10 +233,19 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
   };
 
   const handleCreate = async () => {
-    if (!title || !code || !duration || !file) {
+    if (!title || !code || !duration) {
       toast({
         title: "Missing fields",
-        description: "Fill all fields and upload Excel file",
+        description: "Please fill in Title, Exam Code, and Duration.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (assessmentType === "standard" && !file) {
+      toast({
+        title: "Excel File Required",
+        description: "Upload an Excel file containing questions for standard MCQ assessments.",
         variant: "destructive",
       });
       return;
@@ -225,9 +269,19 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
       );
 
       formData.append("adminEmail", "coreadmin@secureexam.com");
-      formData.append("file", file);
+      if (file) {
+        formData.append("file", file);
+      } else if (assessmentType === "coding_hybrid") {
+        const dummyBlob = new Blob(["Section,Question Type,Question,Correct Answer,Marks\nCoding,DES,Coding Hybrid Question Set,N/A,100"], { type: "text/csv" });
+        formData.append("file", dummyBlob, "coding_questions.csv");
+      }
+
       formData.append("cameraMonitor", String(cameraMonitor));
       formData.append("dispatchPolicy", dispatchPolicy);
+      formData.append("assessmentType", assessmentType);
+      if (assessmentType === "coding_hybrid") {
+        formData.append("questionSets", JSON.stringify(questionSets));
+      }
 
       const res = await fetch(`${BASE_URL}/exam/create`, {
         method: "POST",
@@ -298,6 +352,38 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
         <div
           className={`space-y-5 flex-grow overflow-auto min-h-0 ${loading ? "pointer-events-none opacity-40" : ""}`}
         >
+          {/* Card 0: Assessment Category Mode */}
+          <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl space-y-3 text-left">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">0. Assessment Type & Category</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setAssessmentType("standard")}
+                className={`p-3 rounded-xl border-2 text-left transition-all ${
+                  assessmentType === "standard"
+                    ? "border-blue-600 bg-blue-50/40 text-blue-900 shadow-sm"
+                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                }`}
+              >
+                <div className="font-extrabold text-xs">Standard Online Assessment</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">MCQ, MSQ, FIB, Numerical & Descriptive question bank from Excel.</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAssessmentType("coding_hybrid")}
+                className={`p-3 rounded-xl border-2 text-left transition-all ${
+                  assessmentType === "coding_hybrid"
+                    ? "border-purple-600 bg-purple-50/40 text-purple-900 shadow-sm"
+                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                }`}
+              >
+                <div className="font-extrabold text-xs">Coding Assessment (Hybrid Set-Wise)</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">Set-wise question papers (Set A, B, C, D). Paper logic + Local IDE code execution.</div>
+              </button>
+            </div>
+          </div>
+
           {/* Card 1: Basic Information */}
           <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl space-y-3 text-left">
             <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">1. Basic Details</h3>
@@ -377,46 +463,239 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
           {/* Card 4: Security & Proctoring */}
           <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl text-left">
             <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">4. Security Enforcements</h3>
-            <p className="text-[11px] text-slate-500">
-              Standard secure fullscreen browser security and copy/paste/right-click block lockouts are active for this assessment drive.
-            </p>
           </div>
 
-          {/* Card 5: Questions Import */}
-          <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl space-y-3 text-left">
-            <div className="flex justify-between items-center mb-1">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">5. Question Source Pool</h3>
-              <Button
-                type="button"
-                variant="link"
-                size="sm"
-                className="h-auto p-0 text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1 text-[11px]"
-                onClick={downloadSampleTemplate}
+          {/* Card 5: Questions Import (Standard Mode) */}
+          {assessmentType === "standard" && (
+            <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl space-y-3 text-left">
+              <div className="flex justify-between items-center mb-1">
+                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">5. Question Source Pool</h3>
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="h-auto p-0 text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1 text-[11px]"
+                  onClick={downloadSampleTemplate}
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" /> Template
+                </Button>
+              </div>
+              <div
+                className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-slate-200 hover:border-blue-400 bg-white p-5 hover:bg-blue-50/20 transition-all text-center"
+                onClick={() => fileInputRef.current?.click()}
               >
-                <FileSpreadsheet className="h-3.5 w-3.5" /> Template
-              </Button>
-            </div>
-            <div
-              className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-slate-200 hover:border-blue-400 bg-white p-5 hover:bg-blue-50/20 transition-all text-center"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <FileSpreadsheet className="h-7 w-7 text-slate-400" />
-              <p className="text-xs font-semibold text-slate-600">
-                {file?.name || "Click to upload Excel spreadsheet (.xlsx)"}
-              </p>
-              <p className="text-[10px] text-slate-400 leading-normal max-w-[280px]">
-                Must define columns: Section, Question, Option A, Option B, Option C, Option D, Correct Answer, Marks, Negative Marks, Code Snippet, Image URL. For multiple correct options, separate correct answers with commas (e.g. A,C).
-              </p>
+                <FileSpreadsheet className="h-7 w-7 text-slate-400" />
+                <p className="text-xs font-semibold text-slate-600">
+                  {file?.name || "Click to upload Excel spreadsheet (.xlsx)"}
+                </p>
+                <p className="text-[10px] text-slate-400 leading-normal max-w-[280px]">
+                  Must define columns: Section, Question, Option A, Option B, Option C, Option D, Correct Answer, Marks, Negative Marks, Code Snippet, Image URL.
+                </p>
 
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={handleFileUpload}
-              />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx, .xls"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Card 6: Question Sets Builder (Coding Hybrid Mode) */}
+          {assessmentType === "coding_hybrid" && (
+            <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl space-y-4 text-left">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-purple-700 font-black">5. Question Paper Sets (Set A, B, C, D)</h3>
+                  <p className="text-[10px] text-slate-500 font-medium">Define set-wise problem statements and maximum score weightages.</p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    const nextLetter = String.fromCharCode(65 + questionSets.length);
+                    setQuestionSets([
+                      ...questionSets,
+                      {
+                        setName: `Set ${nextLetter}`,
+                        paperMaxMarks: 50,
+                        executionMaxMarks: 50,
+                        problemStatement: `Set ${nextLetter} Problem 1: Describe coding problem here.`,
+                        sampleInputOutput: "Input:\nOutput:",
+                        instructions: "1. Write logic on paper.\n2. Execute code in local IDE.",
+                        problems: [
+                          {
+                            title: "Problem 1",
+                            problemStatement: `Set ${nextLetter} Problem 1: Describe coding problem here.`,
+                            sampleInputOutput: "Input:\nOutput:",
+                            instructions: "1. Write logic on paper.\n2. Execute code in local IDE."
+                          }
+                        ]
+                      }
+                    ]);
+                  }}
+                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs h-8 px-3 rounded-lg"
+                >
+                  + Add Set
+                </Button>
+              </div>
+
+              <div className="space-y-4">
+                {questionSets.map((s, idx) => {
+                  const setProblems = s.problems && s.problems.length > 0 ? s.problems : [
+                    {
+                      title: "Problem 1",
+                      problemStatement: s.problemStatement || "",
+                      sampleInputOutput: s.sampleInputOutput || "",
+                      instructions: s.instructions || ""
+                    }
+                  ];
+
+                  return (
+                    <div key={idx} className="p-4 bg-white border border-purple-200 rounded-xl space-y-3 relative shadow-sm text-left">
+                      <div className="flex items-center justify-between border-b pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-purple-900 bg-purple-100 px-2.5 py-1 rounded-md">{s.setName}</span>
+                          <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-150">
+                            {setProblems.length} {setProblems.length === 1 ? "Problem" : "Problems"} in Set
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => {
+                              const updated = [...questionSets];
+                              const pList = updated[idx].problems || [
+                                {
+                                  title: "Problem 1",
+                                  problemStatement: updated[idx].problemStatement || "",
+                                  sampleInputOutput: updated[idx].sampleInputOutput || "",
+                                  instructions: updated[idx].instructions || ""
+                                }
+                              ];
+                              pList.push({
+                                title: `Problem ${pList.length + 1}`,
+                                problemStatement: `${s.setName} Problem ${pList.length + 1}: Write problem statement...`,
+                                sampleInputOutput: "Input:\nOutput:",
+                                instructions: "1. Write logic on paper.\n2. Execute code in local IDE."
+                              });
+                              updated[idx].problems = pList;
+                              updated[idx].problemStatement = pList[0].problemStatement;
+                              setQuestionSets(updated);
+                            }}
+                            className="bg-purple-100 hover:bg-purple-200 text-purple-900 font-extrabold text-[11px] h-7 px-2.5 rounded-lg border border-purple-300"
+                          >
+                            + Add Problem to {s.setName}
+                          </Button>
+                          {questionSets.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setQuestionSets(questionSets.filter((_, i) => i !== idx))}
+                              className="text-red-500 hover:text-red-700 text-xs font-bold ml-2"
+                            >
+                              Remove Set
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-[10px] font-bold text-slate-600 block">Paper Logic Max Marks</Label>
+                          <Input
+                            type="number"
+                            value={s.paperMaxMarks}
+                            onChange={(e) => {
+                              const updated = [...questionSets];
+                              updated[idx].paperMaxMarks = parseInt(e.target.value) || 0;
+                              setQuestionSets(updated);
+                            }}
+                            className="h-8 text-xs bg-slate-50 font-bold"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-[10px] font-bold text-slate-600 block">Execution Output Max Marks</Label>
+                          <Input
+                            type="number"
+                            value={s.executionMaxMarks}
+                            onChange={(e) => {
+                              const updated = [...questionSets];
+                              updated[idx].executionMaxMarks = parseInt(e.target.value) || 0;
+                              setQuestionSets(updated);
+                            }}
+                            className="h-8 text-xs bg-slate-50 font-bold"
+                          />
+                        </div>
+                      </div>
+
+                      {/* PROBLEMS LIST FOR THIS SET */}
+                      <div className="space-y-3 pt-1">
+                        {setProblems.map((prob: any, pIdx: number) => (
+                          <div key={pIdx} className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2 text-white">
+                            <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                              <span className="text-[11px] font-extrabold text-purple-400">
+                                📌 {s.setName} — Question #{pIdx + 1} ({prob.title || `Problem ${pIdx + 1}`})
+                              </span>
+                              {setProblems.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = [...questionSets];
+                                    const filtered = setProblems.filter((_: any, i: number) => i !== pIdx);
+                                    updated[idx].problems = filtered;
+                                    if (filtered.length > 0) updated[idx].problemStatement = filtered[0].problemStatement;
+                                    setQuestionSets(updated);
+                                  }}
+                                  className="text-red-400 hover:text-red-300 text-[10px] font-bold"
+                                >
+                                  Remove Problem #{pIdx + 1}
+                                </button>
+                              )}
+                            </div>
+
+                            <div>
+                              <Label className="text-[10px] font-bold text-purple-300 block mb-1">Problem Statement #{pIdx + 1}</Label>
+                              <textarea
+                                value={prob.problemStatement}
+                                onChange={(e) => {
+                                  const updated = [...questionSets];
+                                  const pList = [...setProblems];
+                                  pList[pIdx].problemStatement = e.target.value;
+                                  updated[idx].problems = pList;
+                                  if (pIdx === 0) updated[idx].problemStatement = e.target.value;
+                                  setQuestionSets(updated);
+                                }}
+                                className="w-full min-h-[55px] p-2 text-xs font-mono border border-slate-800 rounded-lg bg-slate-900 text-green-400 focus:outline-none"
+                              />
+                            </div>
+
+                            <div>
+                              <Label className="text-[10px] font-bold text-amber-300 block mb-1">Sample Inputs & Outputs #{pIdx + 1}</Label>
+                              <textarea
+                                value={prob.sampleInputOutput}
+                                onChange={(e) => {
+                                  const updated = [...questionSets];
+                                  const pList = [...setProblems];
+                                  pList[pIdx].sampleInputOutput = e.target.value;
+                                  updated[idx].problems = pList;
+                                  if (pIdx === 0) updated[idx].sampleInputOutput = e.target.value;
+                                  setQuestionSets(updated);
+                                }}
+                                className="w-full min-h-[45px] p-2 text-xs font-mono border border-slate-800 rounded-lg bg-slate-900 text-amber-300 focus:outline-none"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {parsedQuestions.length > 0 && (
             <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-2 text-left">

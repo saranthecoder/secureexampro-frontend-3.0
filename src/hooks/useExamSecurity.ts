@@ -2,6 +2,7 @@ import { useEffect, useCallback, useState, useRef } from 'react';
 
 interface UseExamSecurityOptions {
   enabled: boolean;
+  paused?: boolean;
   maxWarnings?: number;
   onWarning?: (count: number, type: string) => void;
   onDisqualify?: (count: number) => void;
@@ -9,6 +10,7 @@ interface UseExamSecurityOptions {
 
 export const useExamSecurity = ({
   enabled,
+  paused = false,
   maxWarnings = 3,
   onWarning,
   onDisqualify,
@@ -52,11 +54,13 @@ export const useExamSecurity = ({
 
     // Disable right-click
     const handleContextMenu = (e: MouseEvent) => {
+      if (paused) return;
       e.preventDefault();
     };
 
     // Trap & Block System Keyboards, Calculator Buttons, Windows Keys & Function Keys (F1 - F12)
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (paused) return;
       const key = e.key || '';
       const code = e.code || '';
       const lowerKey = key.toLowerCase();
@@ -114,12 +118,22 @@ export const useExamSecurity = ({
     };
 
     // Disable copy/paste/cut
-    const handleCopy = (e: ClipboardEvent) => e.preventDefault();
-    const handlePaste = (e: ClipboardEvent) => e.preventDefault();
-    const handleCut = (e: ClipboardEvent) => e.preventDefault();
+    const handleCopy = (e: ClipboardEvent) => {
+      if (paused) return;
+      e.preventDefault();
+    };
+    const handlePaste = (e: ClipboardEvent) => {
+      if (paused) return;
+      e.preventDefault();
+    };
+    const handleCut = (e: ClipboardEvent) => {
+      if (paused) return;
+      e.preventDefault();
+    };
 
     // Detect tab switching
     const handleVisibilityChange = () => {
+      if (paused) return;
       if (document.hidden) {
         const now = Date.now();
         if (now - lastBlurTimeRef.current > 1500) {
@@ -131,10 +145,11 @@ export const useExamSecurity = ({
 
     // Detect focus loss to external applications (e.g. System Calculator)
     const handleWindowBlur = () => {
+      if (paused) return;
       const now = Date.now();
       if (now - lastBlurTimeRef.current > 1500) {
         lastBlurTimeRef.current = now;
-        triggerWarning('Focus lost to external application (e.g. System Calculator)!');
+        triggerWarning('Focus lost to external application!');
       }
     };
 
@@ -142,13 +157,14 @@ export const useExamSecurity = ({
     const handleFullscreenChange = () => {
       const fs = !!document.fullscreenElement;
       setIsFullscreen(fs);
-      if (!fs && enabled) {
+      if (!fs && enabled && !paused) {
         triggerWarning('Fullscreen exited!');
       }
     };
 
     // Block page unload
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (paused) return;
       e.preventDefault();
       e.returnValue = '';
     };

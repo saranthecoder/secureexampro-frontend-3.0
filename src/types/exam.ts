@@ -4,6 +4,7 @@ export interface User {
   email: string;
   role: 'admin' | 'student';
   rollNumber?: string;
+  loginTimestamp?: number;
 }
 
 export interface Question {
