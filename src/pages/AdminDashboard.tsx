@@ -3245,7 +3245,7 @@ const AdminDashboard = () => {
 
                     {managingExamQuestions.assessmentType === "coding_hybrid" && (
                       <Button
-                        onClick={() => handleOpenEditModal(managingExamQuestions)}
+                        onClick={() => handleOpenEdit(managingExamQuestions)}
                         className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 self-start md:self-center shrink-0 shadow"
                       >
                         <FileText className="h-4 w-4" /> Edit Paper Sets
