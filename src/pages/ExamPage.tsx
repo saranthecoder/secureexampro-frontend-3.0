@@ -1450,33 +1450,63 @@ const ExamPage = () => {
       const totalWaitTime = initialStaggerWaitTime.current || exam.waitTimeRemaining || 20;
       const progressPercent = ((totalWaitTime - waitTime) / totalWaitTime) * 100;
 
+      // SVG countdown ring
+      const circleRadius = 80;
+      const circleCircumference = 2 * Math.PI * circleRadius;
+      const progressOffset = circleCircumference * (1 - waitTime / totalWaitTime);
+
       return (
         <div className="fixed inset-0 z-[9999] bg-slate-950 flex flex-col items-center justify-center text-white p-6 font-sans">
           <div className="absolute inset-0 bg-gradient-to-b from-blue-900/10 via-transparent to-slate-955 pointer-events-none" />
           
           <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center space-y-6 shadow-2xl relative z-10">
-            <div className="mx-auto w-16 h-16 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-              <span className="relative flex h-8 w-8">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                <Shield className="relative inline-flex rounded-full h-8 w-8 text-blue-500" />
-              </span>
+            {/* Large Circular Countdown Timer */}
+            <div className="relative mx-auto flex items-center justify-center" style={{ width: 200, height: 200 }}>
+              {/* Glow */}
+              <div className="absolute h-40 w-40 rounded-full bg-blue-500/10 blur-3xl"></div>
+              
+              {/* SVG Ring */}
+              <svg className="h-full w-full -rotate-90" viewBox="0 0 200 200">
+                <circle
+                  cx="100" cy="100" r={circleRadius}
+                  fill="none"
+                  stroke="#1e293b"
+                  strokeWidth="8"
+                />
+                <circle
+                  cx="100" cy="100" r={circleRadius}
+                  fill="none"
+                  stroke="#3b82f6"
+                  strokeWidth="8"
+                  strokeLinecap="round"
+                  strokeDasharray={circleCircumference}
+                  strokeDashoffset={progressOffset}
+                  className="transition-all duration-1000 ease-linear"
+                />
+              </svg>
+
+              {/* Timer Number */}
+              <div className="absolute flex flex-col items-center justify-center">
+                <span className="text-5xl font-black text-white font-mono tabular-nums">
+                  {waitTime}
+                </span>
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mt-1">
+                  seconds
+                </span>
+              </div>
             </div>
 
             <div className="space-y-2 text-center">
-              <h2 className="text-2xl font-black tracking-tight text-white font-mono uppercase">Securing Session</h2>
+              <h2 className="text-xl font-black tracking-tight text-white font-mono uppercase">Waiting Room</h2>
               <p className="text-slate-400 text-xs leading-relaxed">
-                To manage high server load and verify proctoring configurations, candidates are admitted in secure batches.
+                To manage server load, candidates are admitted in secure batches. You will be automatically admitted when your timer reaches zero.
               </p>
             </div>
 
-            <div className="bg-slate-950/60 rounded-2xl p-6 border border-slate-800 space-y-4">
+            <div className="bg-slate-950/60 rounded-2xl p-4 border border-slate-800 space-y-3">
               <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
                 <span>Queue Status</span>
-                <span className="text-emerald-400 animate-pulse font-mono font-bold">Waiting Room Active</span>
-              </div>
-              <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
-                <span>Estimated Entry In</span>
-                <span className="text-blue-400 font-mono text-sm font-black">{waitTime} seconds</span>
+                <span className="text-emerald-400 animate-pulse font-mono font-bold">Active</span>
               </div>
               
               <div className="w-full bg-slate-850 h-2.5 rounded-full overflow-hidden border border-slate-800">
@@ -1816,9 +1846,42 @@ const ExamPage = () => {
 
             {/* Active Timers Status Strip */}
             {isWaiting ? (
-              <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3.5 rounded-xl flex items-center gap-2.5 text-xs font-semibold animate-pulse text-left">
-                <Clock className="h-4 w-4 text-amber-600 flex-shrink-0" />
-                <span>Waiting for exam start window. Time remaining: {formatTimeLeft(timeLeftToStart)}</span>
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 p-5 rounded-xl text-left space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-amber-700">
+                  <Clock className="h-4 w-4 text-amber-600 animate-pulse flex-shrink-0" />
+                  Exam Lobby — Waiting for Start Window
+                </div>
+                <div className="flex items-center justify-center gap-3 py-2">
+                  {(() => {
+                    const t = timeLeftToStart || 0;
+                    const hrs = Math.floor(t / 3600);
+                    const mins = Math.floor((t % 3600) / 60);
+                    const secs = t % 60;
+                    return (
+                      <>
+                        {hrs > 0 && (
+                          <div className="flex flex-col items-center">
+                            <span className="text-3xl font-black font-mono text-amber-900 tabular-nums bg-white border border-amber-200 rounded-lg px-3 py-1.5 shadow-sm">{hrs.toString().padStart(2, "0")}</span>
+                            <span className="text-[9px] text-amber-600 font-bold mt-1 uppercase">Hours</span>
+                          </div>
+                        )}
+                        {hrs > 0 && <span className="text-2xl font-black text-amber-400 -mt-4">:</span>}
+                        <div className="flex flex-col items-center">
+                          <span className="text-3xl font-black font-mono text-amber-900 tabular-nums bg-white border border-amber-200 rounded-lg px-3 py-1.5 shadow-sm">{mins.toString().padStart(2, "0")}</span>
+                          <span className="text-[9px] text-amber-600 font-bold mt-1 uppercase">Minutes</span>
+                        </div>
+                        <span className="text-2xl font-black text-amber-400 -mt-4 animate-pulse">:</span>
+                        <div className="flex flex-col items-center">
+                          <span className="text-3xl font-black font-mono text-amber-900 tabular-nums bg-white border border-amber-200 rounded-lg px-3 py-1.5 shadow-sm">{secs.toString().padStart(2, "0")}</span>
+                          <span className="text-[9px] text-amber-600 font-bold mt-1 uppercase">Seconds</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+                <p className="text-[11px] text-amber-600 text-center font-medium">
+                  The exam will begin automatically when the timer reaches zero. Please stay on this page.
+                </p>
               </div>
             ) : (
               <div className="bg-emerald-50 border border-emerald-100 text-emerald-800 p-3.5 rounded-xl flex items-center gap-2.5 text-xs font-semibold text-left">
