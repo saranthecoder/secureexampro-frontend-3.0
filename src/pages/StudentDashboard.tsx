@@ -51,6 +51,16 @@ const StudentDashboard = () => {
   const [examCode, setExamCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loaderMessage, setLoaderMessage] = useState("");
+
+  // Stagger queue delay utility (email-hash based, 0–30s)
+  const getStaggerDelay = (emailStr: string) => {
+    let hash = 0;
+    for (let i = 0; i < emailStr.length; i++) {
+      hash = emailStr.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return Math.abs(hash) % 30;
+  };
 
   // Student reports state
   const [reportsLoading, setReportsLoading] = useState(false);
@@ -106,6 +116,17 @@ const StudentDashboard = () => {
 
     setProfileLoading(true);
     try {
+      // Stagger queue to prevent simultaneous SMTP requests
+      const cleanEmail = (user?.email || "").toLowerCase().trim();
+      const delaySeconds = getStaggerDelay(cleanEmail);
+      if (delaySeconds > 0) {
+        for (let s = delaySeconds; s > 0; s--) {
+          setLoaderMessage(`Queued to prevent server overload (${s}s remaining)...`);
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+      setLoaderMessage("");
+
       const res = await fetch(`${BASE_URL}/auth/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -265,7 +286,19 @@ const StudentDashboard = () => {
   const fetchStudentReports = async () => {
     if (!user?.email) return;
     setReportsLoading(true);
+    setLoading(true);
     try {
+      // Stagger queue to prevent 500 simultaneous report fetch queries
+      const cleanEmail = user.email.toLowerCase().trim();
+      const delaySeconds = getStaggerDelay(cleanEmail);
+      if (delaySeconds > 0) {
+        for (let s = delaySeconds; s > 0; s--) {
+          setLoaderMessage(`Loading your dashboard (${s}s remaining)...`);
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+      setLoaderMessage("");
+
       const res = await fetch(`${BASE_URL}/exam/student-reports/${encodeURIComponent(user.email)}`);
       const data = await res.json();
       if (res.ok && data.reports) {
@@ -275,6 +308,7 @@ const StudentDashboard = () => {
       console.error("Failed to fetch student reports:", err);
     } finally {
       setReportsLoading(false);
+      setLoading(false);
     }
   };
 
@@ -315,6 +349,17 @@ const StudentDashboard = () => {
     setLoading(true);
 
     try {
+      // Stagger queue to prevent 500 simultaneous exam code lookups
+      const cleanEmail = (parsedUser.email || "").toLowerCase().trim();
+      const delaySeconds = getStaggerDelay(cleanEmail);
+      if (delaySeconds > 0) {
+        for (let s = delaySeconds; s > 0; s--) {
+          setLoaderMessage(`Queued to prevent server overload (${s}s remaining)...`);
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+      setLoaderMessage("");
+
       const res = await fetch(
         `${BASE_URL}/exam/${trimmedCode}?email=${encodeURIComponent(parsedUser.email)}`
       );
@@ -679,7 +724,7 @@ const StudentDashboard = () => {
 
   return (
     <>
-      {loading && <Loader />}
+      {loading && <Loader message={loaderMessage} />}
       <div className="min-h-screen bg-slate-50 font-sans flex flex-col justify-between">
         {/* ================= HEADER ================= */}
         <header className="border-b border-slate-200 bg-white sticky top-0 z-50 shadow-sm">
@@ -1330,7 +1375,7 @@ const StudentDashboard = () => {
           ) : activeTab === "profile" ? (
             /* ================= PROFILE TAB ================= */
             <div className="max-w-4xl mx-auto py-4 space-y-6 text-left">
-              {profileLoading && <Loader />}
+              {profileLoading && <Loader message={loaderMessage} />}
 
               {/* Profile Header */}
               <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6 rounded-2xl text-white space-y-3 shadow-md border border-slate-700">

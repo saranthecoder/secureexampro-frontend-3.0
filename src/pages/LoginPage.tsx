@@ -252,6 +252,17 @@ const AuthPage = () => {
 
     setLoading(true);
     try {
+      // Stagger queue to prevent 500 simultaneous verify-otp calls
+      const cleanEmail = email.toLowerCase().trim();
+      const delaySeconds = getOtpStaggerDelay(cleanEmail);
+      if (delaySeconds > 0) {
+        for (let s = delaySeconds; s > 0; s--) {
+          setLoaderMessage(`Queued to prevent server overload (${s}s remaining)...`);
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+      setLoaderMessage("");
+
       const res = await fetch(`${BASE_URL}/auth/verify-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

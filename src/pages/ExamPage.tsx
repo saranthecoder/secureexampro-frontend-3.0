@@ -66,7 +66,17 @@ const ExamPage = () => {
   const [answers, setAnswers] = useState<any[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [submitLoaderMessage, setSubmitLoaderMessage] = useState("");
   const submitLock = useRef(false);
+
+  // Stagger delay for exam submission (0–15s, shorter than login queues)
+  const getSubmitStaggerDelay = (emailStr: string) => {
+    let hash = 0;
+    for (let i = 0; i < emailStr.length; i++) {
+      hash = emailStr.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return Math.abs(hash) % 15;
+  };
   const [showConfirm, setShowConfirm] = useState(false);
   const [started, setStarted] = useState(false);
 
@@ -783,6 +793,16 @@ const ExamPage = () => {
 
     try {
       setSubmitting(true);
+
+      // Stagger queue to prevent 500 simultaneous exam submissions
+      const staggerDelay = getSubmitStaggerDelay(parsedUser.email || "");
+      if (staggerDelay > 0) {
+        for (let s = staggerDelay; s > 0; s--) {
+          setSubmitLoaderMessage(`Processing submission (${s}s remaining)...`);
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+      setSubmitLoaderMessage("");
 
       const res = await fetch(`${BASE_URL}/exam/submit/${exam.examCode}`, {
         method: "POST",
@@ -2035,7 +2055,7 @@ const ExamPage = () => {
       {/* LOADER */}
       {submitting && (
         <div className="fixed inset-0 z-[9999] bg-white/80 backdrop-blur flex items-center justify-center">
-          <Loader />
+          <Loader message={submitLoaderMessage} />
         </div>
       )}
 
