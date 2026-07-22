@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
 
+interface LoaderProps {
+  message?: string;
+}
+
 const messages = [
   "Setting up secure environment...",
   "Verifying credentials...",
@@ -8,7 +12,7 @@ const messages = [
   "Please wait..."
 ];
 
-const Loader = () => {
+const Loader = ({ message }: LoaderProps) => {
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
@@ -42,7 +46,7 @@ const Loader = () => {
 
     <div className="mt-20 flex flex-col items-center">
       <p className="text-emerald-600 font-semibold text-sm">
-        {messages[index]}
+        {message || messages[index]}
       </p>
 
       <div className="mt-3 flex gap-2">

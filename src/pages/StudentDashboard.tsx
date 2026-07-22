@@ -900,24 +900,26 @@ const StudentDashboard = () => {
                               {r.submittedAt ? new Date(r.submittedAt).toLocaleString() : "N/A"}
                             </td>
 
-                            <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
-                              <Button
-                                size="sm"
-                                onClick={() => setSelectedReport(r)}
-                                className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs h-8 px-3 rounded-lg shadow-sm gap-1.5"
-                              >
-                                <Eye className="h-3.5 w-3.5" /> View Analysis
-                              </Button>
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  size="sm"
+                                  onClick={() => setSelectedReport(r)}
+                                  className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs h-8 px-3 rounded-lg shadow-sm gap-1.5"
+                                >
+                                  <Eye className="h-3.5 w-3.5" /> View Analysis
+                                </Button>
 
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleExportStudentReportExcel(r)}
-                                className="h-8 px-2.5 text-xs font-bold border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg gap-1 shadow-sm"
-                                title="Download Excel Scorecard"
-                              >
-                                <Download className="h-3.5 w-3.5 text-emerald-600" /> Excel
-                              </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleExportStudentReportExcel(r)}
+                                  className="h-8 px-2.5 text-xs font-bold border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg gap-1 shadow-sm"
+                                  title="Download Excel Scorecard"
+                                >
+                                  <Download className="h-3.5 w-3.5 text-emerald-600" /> Excel
+                                </Button>
+                              </div>
                             </td>
                           </tr>
                         ))}

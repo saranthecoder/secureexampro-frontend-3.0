@@ -1121,6 +1121,7 @@ const AdminDashboard = () => {
                 _id: `active-${email}`,
                 studentName: candInfo.name || "Candidate",
                 studentEmail: email,
+                studentRollNumber: candInfo.rollNumber || "N/A",
                 score: "In Progress",
                 positiveMarks: 0,
                 negativeMarks: 0,
@@ -1184,6 +1185,7 @@ const AdminDashboard = () => {
             _id: `active-${email}`,
             studentName: candInfo.name || "Candidate",
             studentEmail: email,
+            studentRollNumber: candInfo.rollNumber || "N/A",
             score: totalScore > 0 ? totalScore : "In Progress",
             paperLogicMarks: paperScore,
             executionOutputMarks: execScore,
@@ -1218,6 +1220,7 @@ const AdminDashboard = () => {
 
           return {
             ...r,
+            studentRollNumber: candInfo.rollNumber || r.studentRollNumber || "N/A",
             assignedSet: candInfo.assignedSet || r.assignedSet || "",
             allowLocalIdeSwitch: candInfo.allowLocalIdeSwitch !== undefined ? !!candInfo.allowLocalIdeSwitch : !!r.allowLocalIdeSwitch,
             paperLogicMarks: paperScore,
@@ -1244,7 +1247,7 @@ const AdminDashboard = () => {
   useEffect(() => {
     if (!monitorExam) return;
     fetchUpdates();
-    const intervalId = setInterval(fetchUpdates, 3000);
+    const intervalId = setInterval(fetchUpdates, 6000);
     return () => clearInterval(intervalId);
   }, [monitorExam, fetchUpdates]);
 
@@ -2521,11 +2524,13 @@ const AdminDashboard = () => {
                           <tbody className="divide-y divide-slate-100">
                             {results.map((r) => (
                               <tr key={r._id} className="hover:bg-slate-50/50 transition-colors">
-                                <td className="px-6 py-4 font-bold text-slate-800 flex items-center gap-2">
-                                  {r.studentName}
-                                  {r.isActive && (
-                                    <span className={`w-2 h-2 rounded-full ${r.isOffline ? "bg-red-400" : "bg-emerald-500 animate-pulse"}`} title={r.isOffline ? "Offline" : "Active Online"} />
-                                  )}
+                                <td className="px-6 py-4 font-bold text-slate-800">
+                                  <div className="flex items-center gap-2">
+                                    {r.studentName}
+                                    {r.isActive && (
+                                      <span className={`w-2 h-2 rounded-full ${r.isOffline ? "bg-red-400" : "bg-emerald-500 animate-pulse"}`} title={r.isOffline ? "Offline" : "Active Online"} />
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="px-6 py-4 text-slate-500">{r.studentEmail || "N/A"}</td>
 
@@ -2783,11 +2788,13 @@ const AdminDashboard = () => {
 
                             return (
                               <tr key={r._id} className="hover:bg-slate-50/50 transition-colors">
-                                <td className="px-6 py-4 font-bold text-slate-800 flex items-center gap-2">
-                                  {r.studentName}
-                                  {r.isActive && !isCompleted && (
-                                    <span className={`w-2 h-2 rounded-full ${r.isOffline ? "bg-red-400" : "bg-emerald-500 animate-pulse"}`} title={r.isOffline ? "Offline" : "Active Online"} />
-                                  )}
+                                <td className="px-6 py-4 font-bold text-slate-800">
+                                  <div className="flex items-center gap-2">
+                                    {r.studentName}
+                                    {r.isActive && !isCompleted && (
+                                      <span className={`w-2 h-2 rounded-full ${r.isOffline ? "bg-red-400" : "bg-emerald-500 animate-pulse"}`} title={r.isOffline ? "Offline" : "Active Online"} />
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="px-6 py-4 text-slate-500 font-mono text-[11px]">{r.studentEmail || "N/A"}</td>
                                 

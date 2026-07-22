@@ -74,6 +74,9 @@ const ExamPage = () => {
   const [timeLeftToStart, setTimeLeftToStart] = useState<number | null>(null);
   const [lobbyActive, setLobbyActive] = useState(false);
   const [showReadyPopup, setShowReadyPopup] = useState(false);
+  const [staggerTime, setStaggerTime] = useState<number | null>(null);
+  const [isStaggerActive, setIsStaggerActive] = useState(false);
+  const initialStaggerWaitTime = useRef<number | null>(null);
 
   // Webcam & AI Proctoring states & refs
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -149,7 +152,9 @@ const ExamPage = () => {
   // 🔥 FETCH EXAM FROM BACKEND
   const fetchExam = useCallback(async () => {
     try {
-      const res = await fetch(`${BASE_URL}/exam/${code}`);
+      const parsedUser = JSON.parse(localStorage.getItem("user") || "{}");
+      const emailParam = parsedUser.email ? `?email=${encodeURIComponent(parsedUser.email)}` : "";
+      const res = await fetch(`${BASE_URL}/exam/${code}${emailParam}`);
       const data = await res.json();
 
       if (data.serverTime) {
@@ -186,6 +191,24 @@ const ExamPage = () => {
         };
         setTimeLeftToStart(calculateTimeLeft());
         return;
+      }
+
+      // Check if inside Waiting Queue (staggered lobby waiting pattern)
+      if (data.inWaitingLobby) {
+        setExam(data);
+        setLobbyActive(false);
+        setStaggerTime(data.waitTimeRemaining);
+        if (!initialStaggerWaitTime.current) {
+          initialStaggerWaitTime.current = data.waitTimeRemaining;
+        }
+        setIsStaggerActive(true);
+        return;
+      }
+
+      // Show ready popup if countdown ended or just left queue
+      if (lobbyActive || initialStaggerWaitTime.current !== null) {
+        setShowReadyPopup(true);
+        initialStaggerWaitTime.current = null;
       }
 
       setLobbyActive(false);
@@ -249,7 +272,6 @@ const ExamPage = () => {
         questions: allQuestions,
       });
 
-      const parsedUser = JSON.parse(localStorage.getItem("user") || "{}");
       const cacheKey = `answers_${data.examCode}_${parsedUser.email}`;
       const cached = localStorage.getItem(cacheKey);
 
@@ -367,7 +389,6 @@ const ExamPage = () => {
     if (!lobbyActive || timeLeftToStart === null || !exam?.startTime) return;
 
     if (timeLeftToStart <= 0) {
-      setShowReadyPopup(true);
       setLobbyActive(false);
       fetchExam(); // Fetch the full questions automatically once lobby ends!
       return;
@@ -382,6 +403,23 @@ const ExamPage = () => {
 
     return () => clearTimeout(timerId);
   }, [lobbyActive, timeLeftToStart, exam?.startTime, fetchExam]);
+
+  // Stagger countdown timer loop
+  useEffect(() => {
+    if (!isStaggerActive || staggerTime === null) return;
+
+    if (staggerTime <= 0) {
+      setIsStaggerActive(false);
+      fetchExam(); // Fetch the full questions automatically once stagger queue ends!
+      return;
+    }
+
+    const timerId = setTimeout(() => {
+      setStaggerTime(prev => (prev !== null && prev > 0 ? prev - 1 : 0));
+    }, 1000);
+
+    return () => clearTimeout(timerId);
+  }, [isStaggerActive, staggerTime, fetchExam]);
 
   const formatTimeLeft = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -942,6 +980,7 @@ const ExamPage = () => {
           },
           body: JSON.stringify({
             name: parsedUser.name,
+            rollNumber: parsedUser.rollNumber || "",
             faceWarningCount,
             noiseWarningCount,
             tabSwitchCount,
@@ -976,7 +1015,7 @@ const ExamPage = () => {
     };
 
     sendHeartbeat();
-    const intervalId = setInterval(sendHeartbeat, 3000);
+    const intervalId = setInterval(sendHeartbeat, 10000);
 
     return () => clearInterval(intervalId);
   }, [
@@ -1386,6 +1425,56 @@ const ExamPage = () => {
   // PRE START SCREEN
   // =======================
   if (!started) {
+    if (exam && exam.inWaitingLobby) {
+      const waitTime = staggerTime !== null ? staggerTime : exam.waitTimeRemaining || 20;
+      const totalWaitTime = initialStaggerWaitTime.current || exam.waitTimeRemaining || 20;
+      const progressPercent = ((totalWaitTime - waitTime) / totalWaitTime) * 100;
+
+      return (
+        <div className="fixed inset-0 z-[9999] bg-slate-950 flex flex-col items-center justify-center text-white p-6 font-sans">
+          <div className="absolute inset-0 bg-gradient-to-b from-blue-900/10 via-transparent to-slate-955 pointer-events-none" />
+          
+          <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center space-y-6 shadow-2xl relative z-10">
+            <div className="mx-auto w-16 h-16 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+              <span className="relative flex h-8 w-8">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                <Shield className="relative inline-flex rounded-full h-8 w-8 text-blue-500" />
+              </span>
+            </div>
+
+            <div className="space-y-2 text-center">
+              <h2 className="text-2xl font-black tracking-tight text-white font-mono uppercase">Securing Session</h2>
+              <p className="text-slate-400 text-xs leading-relaxed">
+                To manage high server load and verify proctoring configurations, candidates are admitted in secure batches.
+              </p>
+            </div>
+
+            <div className="bg-slate-950/60 rounded-2xl p-6 border border-slate-800 space-y-4">
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
+                <span>Queue Status</span>
+                <span className="text-emerald-400 animate-pulse font-mono font-bold">Waiting Room Active</span>
+              </div>
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
+                <span>Estimated Entry In</span>
+                <span className="text-blue-400 font-mono text-sm font-black">{waitTime} seconds</span>
+              </div>
+              
+              <div className="w-full bg-slate-850 h-2.5 rounded-full overflow-hidden border border-slate-800">
+                <div 
+                  className="bg-blue-500 h-full transition-all duration-1000 ease-linear"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="text-[10px] text-slate-500 font-medium">
+              Please do not close or refresh this page. Your queue position is secured.
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     const isWaiting = timeLeftToStart === null || timeLeftToStart > 0;
     const hasNegativeMarking = !!(exam?.hasNegativeMarking || exam.questions?.some((q: any) => (q.negativeMarks || 0) > 0));
     const maxNegativeMark = exam?.maxNegativeMark || exam.questions?.reduce((max: number, q: any) => Math.max(max, q.negativeMarks || 0), 0) || 0;

@@ -20,6 +20,15 @@ const AuthPage = () => {
   const [otpSent, setOtpSent] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loaderMessage, setLoaderMessage] = useState("");
+
+  const getOtpStaggerDelay = (emailStr: string) => {
+    let hash = 0;
+    for (let i = 0; i < emailStr.length; i++) {
+      hash = emailStr.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return Math.abs(hash) % 30;
+  };
 
   // OTP Rate Limit tracking
   const [otpCount, setOtpCount] = useState(0);
@@ -68,6 +77,16 @@ const AuthPage = () => {
 
     setLoading(true);
     try {
+      const cleanEmail = email.toLowerCase().trim();
+      const delaySeconds = getOtpStaggerDelay(cleanEmail);
+      if (delaySeconds > 0) {
+        for (let s = delaySeconds; s > 0; s--) {
+          setLoaderMessage(`Queued to prevent server overload (${s}s remaining)...`);
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+      setLoaderMessage("");
+
       const payload: any = { email, mode: authMode };
       if (authMode === "signup") {
         payload.name = name;
@@ -165,6 +184,16 @@ const AuthPage = () => {
     setError("");
     setLoading(true);
     try {
+      const cleanEmail = email.toLowerCase().trim();
+      const delaySeconds = getOtpStaggerDelay(cleanEmail);
+      if (delaySeconds > 0) {
+        for (let s = delaySeconds; s > 0; s--) {
+          setLoaderMessage(`Queued to prevent server overload (${s}s remaining)...`);
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+      setLoaderMessage("");
+
       const payload: any = { email, mode: authMode };
       if (authMode === "signup") {
         payload.name = name;
@@ -250,7 +279,7 @@ const AuthPage = () => {
 
   return (
     <>
-      {loading && <Loader />}
+      {loading && <Loader message={loaderMessage} />}
       <div className="flex min-h-screen bg-slate-50 font-sans">
         
         {/* ================= LEFT BRAND SECTION ================= */}
