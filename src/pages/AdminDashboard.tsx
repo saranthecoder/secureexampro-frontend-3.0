@@ -1170,7 +1170,9 @@ const AdminDashboard = () => {
         const emailKey = (r.studentEmail || "").toLowerCase();
         const candInfo = activeCands[emailKey] || activeCands[`${monitorExam.examCode.toUpperCase()}-${emailKey}`];
 
-        if (candInfo) {
+        const isSubmittedOrTerminated = !!r.submittedAt || !!r.terminated || r.codingPhase === "completed";
+
+        if (candInfo && !isSubmittedOrTerminated) {
           const paperScore = candInfo.paperLogicMarks !== undefined ? candInfo.paperLogicMarks : r.paperLogicMarks || 0;
           const execScore = candInfo.executionOutputMarks !== undefined ? candInfo.executionOutputMarks : r.executionOutputMarks || 0;
           const totalScore = paperScore + execScore;
@@ -1189,7 +1191,10 @@ const AdminDashboard = () => {
             isOffline: candInfo.isOffline
           };
         }
-        return r;
+        return {
+          ...r,
+          isActive: false
+        };
       });
 
       setResults([...activeResults, ...mergedDbResults]);
