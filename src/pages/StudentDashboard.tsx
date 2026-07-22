@@ -1632,7 +1632,7 @@ const StudentDashboard = () => {
                 {selectedReport.assessmentType === "coding_hybrid" && (
                   <div className="p-4 bg-purple-950 text-white rounded-xl space-y-2 border border-purple-800">
                     <div className="flex items-center justify-between border-b border-purple-800 pb-2">
-                      <span className="text-xs font-black text-purple-300">Assigned Question Set: {selectedReport.assignedSet || "Set A"}</span>
+                      <span className="text-xs font-black text-purple-300">Assigned Question Set: {selectedReport.assignedSet || "N/A"}</span>
                       <span className="text-xs font-bold text-emerald-400">Total Score: {(selectedReport.paperLogicMarks || 0) + (selectedReport.executionOutputMarks || 0)} / 100</span>
                     </div>
                     <div className="grid grid-cols-2 gap-4 text-xs font-medium pt-1">

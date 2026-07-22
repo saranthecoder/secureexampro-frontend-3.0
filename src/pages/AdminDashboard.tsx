@@ -2586,99 +2586,105 @@ const AdminDashboard = () => {
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {/* BULK SELECTION & SET ALLOCATION TOOLBAR */}
-                        <div className="bg-gradient-to-r from-purple-900 via-slate-900 to-indigo-950 p-3.5 px-5 rounded-xl border border-purple-500/30 shadow-md flex flex-wrap items-center justify-between gap-3 text-white">
-                          <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-lg border border-white/10">
-                              <input
-                                type="checkbox"
-                                id="bulkSelectAllHeaderBar"
-                                checked={selectedStudentEmails.length > 0 && selectedStudentEmails.length === results.map((r: any) => r.studentEmail).filter(Boolean).length}
-                                onChange={handleToggleSelectAllStudents}
-                                className="h-4 w-4 rounded border-white/30 text-purple-500 focus:ring-purple-400 cursor-pointer"
-                              />
-                              <label htmlFor="bulkSelectAllHeaderBar" className="text-xs font-bold text-purple-200 cursor-pointer select-none">
-                                {selectedStudentEmails.length === results.length && results.length > 0 ? "Deselect All" : "Select All"}
-                              </label>
+                        {/* BULK SELECTION & SET ALLOCATION TOOLBAR (CODING HYBRID ONLY) */}
+                        {monitorExam?.assessmentType === "coding_hybrid" && (
+                          <div className="bg-gradient-to-r from-purple-900 via-slate-900 to-indigo-950 p-3.5 px-5 rounded-xl border border-purple-500/30 shadow-md flex flex-wrap items-center justify-between gap-3 text-white">
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-lg border border-white/10">
+                                <input
+                                  type="checkbox"
+                                  id="bulkSelectAllHeaderBar"
+                                  checked={selectedStudentEmails.length > 0 && selectedStudentEmails.length === results.map((r: any) => r.studentEmail).filter(Boolean).length}
+                                  onChange={handleToggleSelectAllStudents}
+                                  className="h-4 w-4 rounded border-white/30 text-purple-500 focus:ring-purple-400 cursor-pointer"
+                                />
+                                <label htmlFor="bulkSelectAllHeaderBar" className="text-xs font-bold text-purple-200 cursor-pointer select-none">
+                                  {selectedStudentEmails.length === results.length && results.length > 0 ? "Deselect All" : "Select All"}
+                                </label>
+                              </div>
+
+                              <span className="text-xs font-semibold text-slate-300">
+                                <strong className="text-white font-mono bg-purple-500/30 px-2.5 py-0.5 rounded border border-purple-400/30 text-xs">
+                                  {selectedStudentEmails.length}
+                                </strong> of {results.length} Students Selected
+                              </span>
                             </div>
 
-                            <span className="text-xs font-semibold text-slate-300">
-                              <strong className="text-white font-mono bg-purple-500/30 px-2.5 py-0.5 rounded border border-purple-400/30 text-xs">
-                                {selectedStudentEmails.length}
-                              </strong> of {results.length} Students Selected
-                            </span>
-                          </div>
+                            <div className="flex items-center gap-2.5">
+                              <select
+                                value={selectedBulkSet}
+                                onChange={(e) => setSelectedBulkSet(e.target.value)}
+                                disabled={selectedStudentEmails.length === 0 || bulkAssigning}
+                                className="bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-lg border border-purple-500/40 focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-sm cursor-pointer disabled:opacity-50"
+                              >
+                                <option value="">-- Choose Set to Allocate --</option>
+                                {monitorExam?.questionSets?.length > 0 ? (
+                                  monitorExam.questionSets.map((qs: any) => (
+                                    <option key={qs.setName} value={qs.setName}>{qs.setName}</option>
+                                  ))
+                                ) : (
+                                  <>
+                                    <option value="Set A">Set A</option>
+                                    <option value="Set B">Set B</option>
+                                    <option value="Set C">Set C</option>
+                                    <option value="Set D">Set D</option>
+                                    <option value="Set E">Set E</option>
+                                  </>
+                                )}
+                              </select>
 
-                          <div className="flex items-center gap-2.5">
-                            <select
-                              value={selectedBulkSet}
-                              onChange={(e) => setSelectedBulkSet(e.target.value)}
-                              disabled={selectedStudentEmails.length === 0 || bulkAssigning}
-                              className="bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-lg border border-purple-500/40 focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-sm cursor-pointer disabled:opacity-50"
-                            >
-                              <option value="">-- Choose Set to Allocate --</option>
-                              {monitorExam?.questionSets?.length > 0 ? (
-                                monitorExam.questionSets.map((qs: any) => (
-                                  <option key={qs.setName} value={qs.setName}>{qs.setName}</option>
-                                ))
-                              ) : (
-                                <>
-                                  <option value="Set A">Set A</option>
-                                  <option value="Set B">Set B</option>
-                                  <option value="Set C">Set C</option>
-                                  <option value="Set D">Set D</option>
-                                  <option value="Set E">Set E</option>
-                                </>
-                              )}
-                            </select>
-
-                            <Button
-                              size="sm"
-                              disabled={selectedStudentEmails.length === 0 || !selectedBulkSet || bulkAssigning}
-                              onClick={() => handleBulkAssignSet()}
-                              className="bg-purple-600 hover:bg-purple-500 text-white font-black text-xs h-8 px-3.5 rounded-lg shadow gap-1.5 disabled:opacity-50"
-                            >
-                              {bulkAssigning ? (
-                                <>
-                                  <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                  Allocating...
-                                </>
-                              ) : (
-                                <>
-                                  <Layers className="h-3.5 w-3.5" />
-                                  Allocate Set ({selectedStudentEmails.length})
-                                </>
-                              )}
-                            </Button>
-
-                            {selectedStudentEmails.length > 0 && (
                               <Button
                                 size="sm"
-                                variant="ghost"
-                                onClick={() => setSelectedStudentEmails([])}
-                                className="text-slate-300 hover:text-white hover:bg-white/10 text-xs font-bold h-8 px-2.5 rounded-lg"
+                                disabled={selectedStudentEmails.length === 0 || !selectedBulkSet || bulkAssigning}
+                                onClick={() => handleBulkAssignSet()}
+                                className="bg-purple-600 hover:bg-purple-500 text-white font-black text-xs h-8 px-3.5 rounded-lg shadow gap-1.5 disabled:opacity-50"
                               >
-                                Clear
+                                {bulkAssigning ? (
+                                  <>
+                                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                    Allocating...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Layers className="h-3.5 w-3.5" />
+                                    Allocate Set ({selectedStudentEmails.length})
+                                  </>
+                                )}
                               </Button>
-                            )}
+
+                              {selectedStudentEmails.length > 0 && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => setSelectedStudentEmails([])}
+                                  className="text-slate-300 hover:text-white hover:bg-white/10 text-xs font-bold h-8 px-2.5 rounded-lg"
+                                >
+                                  Clear
+                                </Button>
+                              )}
+                            </div>
                           </div>
-                        </div>
+                        )}
 
                         <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-white shadow-sm">
                           <table className="w-full text-slate-700 text-xs text-left align-middle border-collapse">
                             <thead>
                               <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase font-bold text-[10px] tracking-wider whitespace-nowrap">
-                                <th className="px-4 py-3.5 w-12 text-center">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedStudentEmails.length > 0 && selectedStudentEmails.length === results.map((r: any) => r.studentEmail).filter(Boolean).length}
-                                    onChange={handleToggleSelectAllStudents}
-                                    className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
-                                  />
-                                </th>
+                                {monitorExam?.assessmentType === "coding_hybrid" && (
+                                  <th className="px-4 py-3.5 w-12 text-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedStudentEmails.length > 0 && selectedStudentEmails.length === results.map((r: any) => r.studentEmail).filter(Boolean).length}
+                                      onChange={handleToggleSelectAllStudents}
+                                      className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                                    />
+                                  </th>
+                                )}
                                 <th className="px-4 py-3.5 min-w-[160px]">Student Name</th>
                                 <th className="px-4 py-3.5 min-w-[220px]">Email Address</th>
-                                <th className="px-4 py-3.5 text-center min-w-[140px]">Assigned Set</th>
+                                {monitorExam?.assessmentType === "coding_hybrid" && (
+                                  <th className="px-4 py-3.5 text-center min-w-[140px]">Assigned Set</th>
+                                )}
                                 <th className="px-4 py-3.5 text-center min-w-[210px]">Behavior Logs (Tab/Face/Noise/FS/Net)</th>
                                 <th className="px-4 py-3.5 text-center min-w-[140px]">Proctor Status</th>
                                 <th className="px-4 py-3.5 text-right min-w-[160px]">Submitted At</th>
@@ -2688,14 +2694,16 @@ const AdminDashboard = () => {
                             <tbody className="divide-y divide-slate-100 font-sans">
                               {results.map((r) => (
                                 <tr key={r._id} className={`transition-colors whitespace-nowrap ${selectedStudentEmails.includes(r.studentEmail) ? "bg-purple-50/60" : "hover:bg-slate-50/60"}`}>
-                                  <td className="px-4 py-3.5 text-center">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedStudentEmails.includes(r.studentEmail)}
-                                      onChange={() => handleToggleSelectStudent(r.studentEmail)}
-                                      className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
-                                    />
-                                  </td>
+                                  {monitorExam?.assessmentType === "coding_hybrid" && (
+                                    <td className="px-4 py-3.5 text-center">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedStudentEmails.includes(r.studentEmail)}
+                                        onChange={() => handleToggleSelectStudent(r.studentEmail)}
+                                        className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                                      />
+                                    </td>
+                                  )}
                                   <td className="px-4 py-3.5 font-bold text-slate-800">
                                     <div className="flex items-center gap-2">
                                       <span>{r.studentName}</span>
@@ -2706,41 +2714,43 @@ const AdminDashboard = () => {
                                   </td>
                                   <td className="px-4 py-3.5 text-slate-500 font-mono text-[11px]">{r.studentEmail || "N/A"}</td>
 
-                                  {/* ASSIGNED SET COLUMN & SELECTOR */}
-                                  <td className="px-4 py-3.5 text-center">
-                                    <select
-                                      value={r.assignedSet || ""}
-                                      disabled={actionLoadingMap[`assignSet_${r.studentEmail}`]}
-                                      onChange={(e) => handleAssignSet(monitorExam?.examCode || "", r.studentEmail, e.target.value)}
-                                      className={`px-2.5 py-1.5 text-xs font-extrabold rounded-lg border focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm cursor-pointer transition-all ${
-                                        actionLoadingMap[`assignSet_${r.studentEmail}`]
-                                          ? "opacity-50 cursor-wait bg-slate-100"
-                                          : r.assignedSet
-                                          ? "bg-purple-600 text-white border-purple-700 font-black shadow"
-                                          : "bg-amber-50 text-amber-900 border-amber-300 font-bold"
-                                      }`}
-                                    >
-                                      {actionLoadingMap[`assignSet_${r.studentEmail}`] ? (
-                                        <option value="">Assigning Set...</option>
-                                      ) : (
-                                        <>
-                                          <option value="" className="bg-white text-slate-700">-- Select Question Set --</option>
-                                          {monitorExam?.questionSets?.length > 0 ? (
-                                            monitorExam.questionSets.map((qs: any) => (
-                                              <option key={qs.setName} value={qs.setName} className="bg-white text-slate-800 font-bold">{qs.setName}</option>
-                                            ))
-                                          ) : (
-                                            <>
-                                              <option value="Set A" className="bg-white text-slate-800 font-bold">Set A</option>
-                                              <option value="Set B" className="bg-white text-slate-800 font-bold">Set B</option>
-                                              <option value="Set C" className="bg-white text-slate-800 font-bold">Set C</option>
-                                              <option value="Set D" className="bg-white text-slate-800 font-bold">Set D</option>
-                                            </>
-                                          )}
-                                        </>
-                                      )}
-                                    </select>
-                                  </td>
+                                  {/* ASSIGNED SET COLUMN & SELECTOR (CODING HYBRID ONLY) */}
+                                  {monitorExam?.assessmentType === "coding_hybrid" && (
+                                    <td className="px-4 py-3.5 text-center">
+                                      <select
+                                        value={r.assignedSet || ""}
+                                        disabled={actionLoadingMap[`assignSet_${r.studentEmail}`]}
+                                        onChange={(e) => handleAssignSet(monitorExam?.examCode || "", r.studentEmail, e.target.value)}
+                                        className={`px-2.5 py-1.5 text-xs font-extrabold rounded-lg border focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm cursor-pointer transition-all ${
+                                          actionLoadingMap[`assignSet_${r.studentEmail}`]
+                                            ? "opacity-50 cursor-wait bg-slate-100"
+                                            : r.assignedSet
+                                            ? "bg-purple-600 text-white border-purple-700 font-black shadow"
+                                            : "bg-amber-50 text-amber-900 border-amber-300 font-bold"
+                                        }`}
+                                      >
+                                        {actionLoadingMap[`assignSet_${r.studentEmail}`] ? (
+                                          <option value="">Assigning Set...</option>
+                                        ) : (
+                                          <>
+                                            <option value="" className="bg-white text-slate-700">-- Select Question Set --</option>
+                                            {monitorExam?.questionSets?.length > 0 ? (
+                                              monitorExam.questionSets.map((qs: any) => (
+                                                <option key={qs.setName} value={qs.setName} className="bg-white text-slate-800 font-bold">{qs.setName}</option>
+                                              ))
+                                            ) : (
+                                              <>
+                                                <option value="Set A" className="bg-white text-slate-800 font-bold">Set A</option>
+                                                <option value="Set B" className="bg-white text-slate-800 font-bold">Set B</option>
+                                                <option value="Set C" className="bg-white text-slate-800 font-bold">Set C</option>
+                                                <option value="Set D" className="bg-white text-slate-800 font-bold">Set D</option>
+                                              </>
+                                            )}
+                                          </>
+                                        )}
+                                      </select>
+                                    </td>
+                                  )}
 
                                   {/* BEHAVIOR LOGS COLUMN */}
                                   <td className="px-4 py-3.5 text-center text-[10px] font-semibold text-slate-500">
