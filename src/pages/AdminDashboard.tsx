@@ -55,6 +55,27 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
   const [exams, setExams] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const fetchExams = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const res = await fetch(`${BASE_URL}/exam/all`);
+      const data = await res.json();
+
+      if (Array.isArray(data)) {
+        setExams(data);
+      } else if (Array.isArray(data.exams)) {
+        setExams(data.exams);
+      } else {
+        setExams([]);
+      }
+    } catch (error) {
+      console.error("Failed to fetch exams");
+      setExams([]);
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
   const [activeTab, setActiveTab] = useState<"dashboard" | "exams" | "monitoring" | "coding_eval" | "settings" | "profile" | "questions" | "analysis">("dashboard");
   const [selectedExamCodeForCodingEval, setSelectedExamCodeForCodingEval] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -124,6 +145,17 @@ const AdminDashboard = () => {
   const [selectedStudentEmails, setSelectedStudentEmails] = useState<string[]>([]);
   const [selectedBulkSet, setSelectedBulkSet] = useState<string>("");
   const [bulkAssigning, setBulkAssigning] = useState(false);
+  const [actionLoadingMap, setActionLoadingMap] = useState<{ [key: string]: boolean }>({});
+  const [adminLoaderMessage, setAdminLoaderMessage] = useState<string>("");
+
+  const setActionState = (key: string, isLoading: boolean, message?: string) => {
+    setActionLoadingMap((prev) => ({ ...prev, [key]: isLoading }));
+    if (isLoading && message) {
+      setAdminLoaderMessage(message);
+    } else if (!isLoading) {
+      setAdminLoaderMessage("");
+    }
+  };
 
   // Edit exam modal state
   const [editingExam, setEditingExam] = useState<any>(null);
@@ -1080,86 +1112,6 @@ const AdminDashboard = () => {
     fetchExams();
   }, []);
 
-  const handleTerminateStudent = async (examCode: string, email: string) => {
-    const confirmation = await Swal.fire({
-      title: "Terminate Candidate?",
-      text: "Are you sure you want to terminate this student's exam? This action will disqualify the candidate immediately.",
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonColor: "#ef4444",
-      cancelButtonColor: "#3b82f6",
-      confirmButtonText: "Yes, Terminate"
-    });
-
-    if (!confirmation.isConfirmed) {
-      return;
-    }
-
-    try {
-      const res = await fetch(`${BASE_URL}/exam/terminate/${examCode}/${encodeURIComponent(email)}`, {
-        method: "POST"
-      });
-      const data = await res.json();
-      if (res.ok) {
-        Swal.fire({
-          title: "Terminated",
-          text: data.message || "Student terminated successfully.",
-          icon: "success",
-          confirmButtonColor: "#3b82f6"
-        });
-        // Refresh updates immediately
-        if (monitorExam) {
-          const resultsRes = await fetch(`${BASE_URL}/exam/results/${monitorExam.examCode}`);
-          const dbResults = resultsRes.ok ? await resultsRes.json() : [];
-          
-          const candidatesRes = await fetch(`${BASE_URL}/exam/active-candidates/${monitorExam.examCode}`);
-          const activeCands = candidatesRes.ok ? await candidatesRes.json() : {};
-          
-          setActiveCandidates(activeCands);
-          
-          const dbEmails = new Set(dbResults.map((r: any) => r.studentEmail?.toLowerCase()));
-          const activeResults = Object.keys(activeCands)
-            .filter((email) => !dbEmails.has(email.toLowerCase()))
-            .map((email) => {
-              const candInfo = activeCands[email];
-              return {
-                _id: `active-${email}`,
-                studentName: candInfo.name || "Candidate",
-                studentEmail: email,
-                studentRollNumber: candInfo.rollNumber || "N/A",
-                score: "In Progress",
-                positiveMarks: 0,
-                negativeMarks: 0,
-                totalMarks: monitorExam.questions ? monitorExam.questions.reduce((sum: number, q: any) => sum + (q.marks || 0), 0) : 0,
-                tabSwitchCount: 0,
-                faceWarningCount: 0,
-                isActive: true,
-                isOffline: candInfo.isOffline,
-                submittedAt: null
-              };
-            });
-            
-          setResults([...activeResults, ...dbResults]);
-        }
-      } else {
-        Swal.fire({
-          title: "Error",
-          text: data.error || "Failed to terminate student.",
-          icon: "error",
-          confirmButtonColor: "#3b82f6"
-        });
-      }
-    } catch (err) {
-      console.error("Error terminating student:", err);
-      Swal.fire({
-        title: "Server Error",
-        text: "Server error terminating student.",
-        icon: "error",
-        confirmButtonColor: "#3b82f6"
-      });
-    }
-  };
-
   // 📌 TELEMETRY & RESULTS POLLING HOOK
   const fetchUpdates = useCallback(async () => {
     if (!monitorExam) {
@@ -1249,6 +1201,50 @@ const AdminDashboard = () => {
     }
   }, [monitorExam]);
 
+  const handleTerminateStudent = async (examCode: string, email: string) => {
+    const confirmation = await Swal.fire({
+      title: "Terminate Candidate?",
+      text: "Are you sure you want to terminate this student's exam? This action will disqualify the candidate immediately.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#ef4444",
+      cancelButtonColor: "#3b82f6",
+      confirmButtonText: "Yes, Terminate"
+    });
+
+    if (!confirmation.isConfirmed) {
+      return;
+    }
+
+    const key = `terminate_${email}`;
+    setActionState(key, true, `Disqualifying candidate ${email} & logging result...`);
+
+    try {
+      const res = await fetch(`${BASE_URL}/exam/terminate/${examCode}/${encodeURIComponent(email)}`, {
+        method: "POST"
+      });
+      const data = await res.json();
+      if (res.ok) {
+        Swal.fire({
+          title: "Terminated",
+          text: data.message || "Student terminated successfully.",
+          icon: "success",
+          confirmButtonColor: "#3b82f6"
+        });
+        if (monitorExam) {
+          await fetchUpdates();
+        }
+      } else {
+        Swal.fire("Error", data.message || "Failed to terminate candidate.", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      Swal.fire("Error", "Failed to terminate candidate. Network error.", "error");
+    } finally {
+      setActionState(key, false);
+    }
+  };
+
   useEffect(() => {
     if (!monitorExam) return;
     fetchUpdates();
@@ -1260,6 +1256,9 @@ const AdminDashboard = () => {
   const handleAssignSet = async (examCode: string, email: string, assignedSet: string) => {
     try {
       if (!examCode || !email) return;
+      const key = `assignSet_${email}`;
+      setActionState(key, true, `Assigning Question ${assignedSet} to ${email}...`);
+
       const res = await fetch(`${BASE_URL}/exam/coding/assign-set/${examCode}/${encodeURIComponent(email)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1277,6 +1276,8 @@ const AdminDashboard = () => {
       }
     } catch (err) {
       console.error("Assign set error:", err);
+    } finally {
+      setActionState(`assignSet_${email}`, false);
     }
   };
 
@@ -1318,6 +1319,7 @@ const AdminDashboard = () => {
     }
 
     setBulkAssigning(true);
+    setAdminLoaderMessage(`Bulk allocating ${targetSet} to ${selectedStudentEmails.length} students...`);
     try {
       const res = await fetch(`${BASE_URL}/exam/coding/bulk-assign-set/${monitorExam?.examCode}`, {
         method: "POST",
@@ -1347,12 +1349,16 @@ const AdminDashboard = () => {
       Swal.fire({ title: "Network Error", text: "Server error occurred during bulk assignment.", icon: "error" });
     } finally {
       setBulkAssigning(false);
+      setAdminLoaderMessage("");
     }
   };
 
   const handleUpdateCodingMarks = async (examCode: string, email: string, paperLogicMarks: number, executionOutputMarks: number) => {
     try {
       if (!examCode || !email) return;
+      const key = `updateMarks_${email}`;
+      setActionState(key, true, `Saving evaluation marks for ${email}...`);
+
       const res = await fetch(`${BASE_URL}/exam/coding/update-marks/${examCode}/${encodeURIComponent(email)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1369,12 +1375,17 @@ const AdminDashboard = () => {
       }
     } catch (err) {
       console.error("Update marks error:", err);
+    } finally {
+      setActionState(`updateMarks_${email}`, false);
     }
   };
 
   const handleToggleIdeAccess = async (examCode: string, email: string, allowLocalIdeSwitch: boolean) => {
     try {
       if (!examCode || !email) return;
+      const key = `toggleIde_${email}`;
+      setActionState(key, true, allowLocalIdeSwitch ? `Unlocking Local IDE access for ${email}...` : `Locking Local IDE access for ${email}...`);
+
       const res = await fetch(`${BASE_URL}/exam/coding/toggle-ide-access/${examCode}/${encodeURIComponent(email)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1391,6 +1402,8 @@ const AdminDashboard = () => {
       }
     } catch (err) {
       console.error("Toggle IDE access error:", err);
+    } finally {
+      setActionState(`toggleIde_${email}`, false);
     }
   };
 
@@ -1405,8 +1418,10 @@ const AdminDashboard = () => {
       confirmButtonText: "Yes, Complete & Send Email"
     });
     if (confirm.isConfirmed) {
+      const key = `completeExam_${email}`;
+      setActionState(key, true, `Finalizing evaluation & dispatching scorecard email to ${email}...`);
+
       try {
-        // Optimistically disable buttons and mark completed locally
         setResults((prev) =>
           prev.map((item) =>
             item.studentEmail?.toLowerCase() === email.toLowerCase()
@@ -1429,30 +1444,13 @@ const AdminDashboard = () => {
         }
       } catch (err) {
         console.error("Complete coding exam error:", err);
+      } finally {
+        setActionState(key, false);
       }
     }
   };
 
-  const fetchExams = async (silent = false) => {
-    if (!silent) setLoading(true);
-    try {
-      const res = await fetch(`${BASE_URL}/exam/all`);
-      const data = await res.json();
 
-      if (Array.isArray(data)) {
-        setExams(data);
-      } else if (Array.isArray(data.exams)) {
-        setExams(data.exams);
-      } else {
-        setExams([]);
-      }
-    } catch (error) {
-      console.error("Failed to fetch exams");
-      setExams([]);
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  };
 
   const handleRefreshComponent = async (tabName: string, customTask?: () => Promise<void>) => {
     setRefreshingTab(tabName);
@@ -1772,7 +1770,7 @@ const AdminDashboard = () => {
 
   return (
     <>
-      {updating && <Loader />}
+      {(updating || !!adminLoaderMessage) && <Loader message={adminLoaderMessage || "Updating..."} />}
       <div className="h-screen overflow-hidden bg-slate-50 flex font-sans text-slate-800">
       
       {/* ======================================= */}
@@ -2464,7 +2462,7 @@ const AdminDashboard = () => {
                               </div>
                             </td>
                           </tr>
-                        ))}`
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -2661,11 +2659,11 @@ const AdminDashboard = () => {
                           </div>
                         </div>
 
-                        <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white">
-                          <table className="w-full text-slate-700 text-xs text-left">
+                        <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-white shadow-sm">
+                          <table className="w-full text-slate-700 text-xs text-left align-middle border-collapse">
                             <thead>
-                              <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 uppercase font-bold text-[10px] tracking-wider">
-                                <th className="px-4 py-4 w-10 text-center">
+                              <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase font-bold text-[10px] tracking-wider whitespace-nowrap">
+                                <th className="px-4 py-3.5 w-12 text-center">
                                   <input
                                     type="checkbox"
                                     checked={selectedStudentEmails.length > 0 && selectedStudentEmails.length === results.map((r: any) => r.studentEmail).filter(Boolean).length}
@@ -2673,20 +2671,19 @@ const AdminDashboard = () => {
                                     className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
                                   />
                                 </th>
-                                <th className="px-6 py-4">Student Name</th>
-                                <th className="px-6 py-4">Email Address</th>
-                                {monitorExam?.assessmentType === "coding_hybrid" && <th className="px-6 py-4 text-center">Assigned Set</th>}
-                                <th className="px-6 py-4 text-center">Net Score</th>
-                                <th className="px-6 py-4 text-center">Behavior Logs (Tab/Face/Noise/FS/Net)</th>
-                                <th className="px-6 py-4 text-center">Proctor Status</th>
-                                <th className="px-6 py-4 text-right">Submitted At</th>
-                                <th className="px-6 py-4 text-right">Action</th>
+                                <th className="px-4 py-3.5 min-w-[160px]">Student Name</th>
+                                <th className="px-4 py-3.5 min-w-[220px]">Email Address</th>
+                                <th className="px-4 py-3.5 text-center min-w-[140px]">Assigned Set</th>
+                                <th className="px-4 py-3.5 text-center min-w-[210px]">Behavior Logs (Tab/Face/Noise/FS/Net)</th>
+                                <th className="px-4 py-3.5 text-center min-w-[140px]">Proctor Status</th>
+                                <th className="px-4 py-3.5 text-right min-w-[160px]">Submitted At</th>
+                                <th className="px-4 py-3.5 text-right min-w-[120px]">Action</th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-100">
+                            <tbody className="divide-y divide-slate-100 font-sans">
                               {results.map((r) => (
-                                <tr key={r._id} className={`transition-colors ${selectedStudentEmails.includes(r.studentEmail) ? "bg-purple-50/60" : "hover:bg-slate-50/50"}`}>
-                                  <td className="px-4 py-4 text-center">
+                                <tr key={r._id} className={`transition-colors whitespace-nowrap ${selectedStudentEmails.includes(r.studentEmail) ? "bg-purple-50/60" : "hover:bg-slate-50/60"}`}>
+                                  <td className="px-4 py-3.5 text-center">
                                     <input
                                       type="checkbox"
                                       checked={selectedStudentEmails.includes(r.studentEmail)}
@@ -2694,139 +2691,143 @@ const AdminDashboard = () => {
                                       className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
                                     />
                                   </td>
-                                  <td className="px-6 py-4 font-bold text-slate-800">
+                                  <td className="px-4 py-3.5 font-bold text-slate-800">
                                     <div className="flex items-center gap-2">
-                                      {r.studentName}
+                                      <span>{r.studentName}</span>
                                       {r.isActive && (
-                                        <span className={`w-2 h-2 rounded-full ${r.isOffline ? "bg-red-400" : "bg-emerald-500 animate-pulse"}`} title={r.isOffline ? "Offline" : "Active Online"} />
+                                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${r.isOffline ? "bg-red-400" : "bg-emerald-500 animate-pulse"}`} title={r.isOffline ? "Offline" : "Active Online"} />
                                       )}
                                     </div>
                                   </td>
-                                  <td className="px-6 py-4 text-slate-500">{r.studentEmail || "N/A"}</td>
+                                  <td className="px-4 py-3.5 text-slate-500 font-mono text-[11px]">{r.studentEmail || "N/A"}</td>
 
-                                {/* ASSIGNED SET COLUMN & SELECTOR — Coding Hybrid only */}
-                                {monitorExam?.assessmentType === "coding_hybrid" && (
-                                <td className="px-6 py-4 text-center">
-                                  <select
-                                    value={r.assignedSet || ""}
-                                    onChange={(e) => handleAssignSet(monitorExam?.examCode || "", r.studentEmail, e.target.value)}
-                                    className={`px-2.5 py-1.5 text-xs font-extrabold rounded-lg border focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm cursor-pointer transition-all ${
-                                      r.assignedSet
-                                        ? "bg-purple-600 text-white border-purple-700 font-black shadow"
-                                        : "bg-amber-50 text-amber-900 border-amber-300 font-bold"
-                                    }`}
-                                  >
-                                    <option value="" className="bg-white text-slate-700">-- Select Question Set --</option>
-                                    {monitorExam?.questionSets?.length > 0 ? (
-                                      monitorExam.questionSets.map((qs: any) => (
-                                        <option key={qs.setName} value={qs.setName} className="bg-white text-slate-800 font-bold">{qs.setName}</option>
-                                      ))
-                                    ) : (
-                                      <>
-                                        <option value="Set A" className="bg-white text-slate-800 font-bold">Set A</option>
-                                        <option value="Set B" className="bg-white text-slate-800 font-bold">Set B</option>
-                                        <option value="Set C" className="bg-white text-slate-800 font-bold">Set C</option>
-                                        <option value="Set D" className="bg-white text-slate-800 font-bold">Set D</option>
-                                      </>
-                                    )}
-                                  </select>
-                                </td>
-                                )}
+                                  {/* ASSIGNED SET COLUMN & SELECTOR */}
+                                  <td className="px-4 py-3.5 text-center">
+                                    <select
+                                      value={r.assignedSet || ""}
+                                      disabled={actionLoadingMap[`assignSet_${r.studentEmail}`]}
+                                      onChange={(e) => handleAssignSet(monitorExam?.examCode || "", r.studentEmail, e.target.value)}
+                                      className={`px-2.5 py-1.5 text-xs font-extrabold rounded-lg border focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm cursor-pointer transition-all ${
+                                        actionLoadingMap[`assignSet_${r.studentEmail}`]
+                                          ? "opacity-50 cursor-wait bg-slate-100"
+                                          : r.assignedSet
+                                          ? "bg-purple-600 text-white border-purple-700 font-black shadow"
+                                          : "bg-amber-50 text-amber-900 border-amber-300 font-bold"
+                                      }`}
+                                    >
+                                      {actionLoadingMap[`assignSet_${r.studentEmail}`] ? (
+                                        <option value="">Assigning Set...</option>
+                                      ) : (
+                                        <>
+                                          <option value="" className="bg-white text-slate-700">-- Select Question Set --</option>
+                                          {monitorExam?.questionSets?.length > 0 ? (
+                                            monitorExam.questionSets.map((qs: any) => (
+                                              <option key={qs.setName} value={qs.setName} className="bg-white text-slate-800 font-bold">{qs.setName}</option>
+                                            ))
+                                          ) : (
+                                            <>
+                                              <option value="Set A" className="bg-white text-slate-800 font-bold">Set A</option>
+                                              <option value="Set B" className="bg-white text-slate-800 font-bold">Set B</option>
+                                              <option value="Set C" className="bg-white text-slate-800 font-bold">Set C</option>
+                                              <option value="Set D" className="bg-white text-slate-800 font-bold">Set D</option>
+                                            </>
+                                          )}
+                                        </>
+                                      )}
+                                    </select>
+                                  </td>
 
-                                <td className="px-6 py-4 text-center font-extrabold text-blue-600">
-                                  {monitorExam?.assessmentType === "coding_hybrid" ? (
-                                    <div className="flex flex-col items-center justify-center gap-0.5 text-[11px]">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold border border-emerald-200">Paper: {r.paperLogicMarks || 0}</span>
-                                        <span className="text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded font-bold border border-purple-200">Exec: {r.executionOutputMarks || 0}</span>
-                                      </div>
-                                      <span className="text-slate-900 font-black text-xs mt-0.5">
-                                        Total: {(r.paperLogicMarks || 0) + (r.executionOutputMarks || 0)} / 100
-                                      </span>
+                                  {/* BEHAVIOR LOGS COLUMN */}
+                                  <td className="px-4 py-3.5 text-center text-[10px] font-semibold text-slate-500">
+                                    <div className="inline-flex flex-col items-start gap-0.5">
+                                      <div>Tab Exits: <span className={r.tabSwitchCount > 0 ? "text-amber-600 font-black text-xs" : "font-mono"}>{r.tabSwitchCount || 0}</span></div>
+                                      <div>Head Turns: <span className={r.faceWarningCount > 0 ? "text-amber-600 font-black text-xs" : "font-mono"}>{r.faceWarningCount || 0}</span></div>
+                                      <div>Noise Flags: <span className={r.noiseWarningCount > 0 ? "text-amber-600 font-black text-xs" : "font-mono"}>{r.noiseWarningCount || 0}</span></div>
+                                      <div>FS Exits: <span className={r.fullScreenExitCount > 0 ? "text-amber-600 font-black text-xs" : "font-mono"}>{r.fullScreenExitCount || 0}</span></div>
+                                      <div>Net Drops: <span className={r.internetIssueCount > 0 ? "text-amber-600 font-black text-xs" : "font-mono"}>{r.internetIssueCount || 0}</span></div>
                                     </div>
-                                  ) : r.isActive ? (
-                                    <span className="text-slate-400 font-semibold italic">In Progress</span>
-                                  ) : r.terminated ? (
-                                    <span className="text-red-650 font-extrabold" title={`${r.score} / ${r.totalMarks}`}>Disqualified</span>
-                                  ) : (
-                                    `${r.score} / ${r.totalMarks}`
-                                  )}
-                                </td>
+                                  </td>
 
-                                <td className="px-6 py-4 text-center text-[10px] font-semibold text-slate-500">
-                                  <div className="inline-flex flex-col items-start gap-0.5">
-                                    <div>Tab Exits: <span className={r.tabSwitchCount > 0 ? "text-amber-600 font-black text-xs" : "font-mono"}>{r.tabSwitchCount || 0}</span></div>
-                                    <div>Head Turns: <span className={r.faceWarningCount > 0 ? "text-amber-600 font-black text-xs" : "font-mono"}>{r.faceWarningCount || 0}</span></div>
-                                    <div>Noise Flags: <span className={r.noiseWarningCount > 0 ? "text-amber-600 font-black text-xs" : "font-mono"}>{r.noiseWarningCount || 0}</span></div>
-                                    <div>FS Exits: <span className={r.fullScreenExitCount > 0 ? "text-amber-600 font-black text-xs" : "font-mono"}>{r.fullScreenExitCount || 0}</span></div>
-                                    <div>Net Drops: <span className={r.internetIssueCount > 0 ? "text-amber-600 font-black text-xs" : "font-mono"}>{r.internetIssueCount || 0}</span></div>
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 text-center">
-                                  {monitorExam?.assessmentType === "coding_hybrid" ? (
-                                    r.codingPhase === "ide_unlocked" ? (
-                                      <Badge className="bg-purple-100 text-purple-800 border border-purple-300 text-[10px] rounded font-extrabold uppercase py-0.5 px-2 animate-pulse">
-                                        IDE Unlocked
-                                      </Badge>
-                                    ) : r.isActive ? (
-                                      <Badge className="bg-blue-50 text-blue-700 border border-blue-100 text-[10px] rounded font-bold uppercase py-0.5 px-2 animate-pulse">
-                                        {r.assignedSet ? `Writing (${r.assignedSet})` : "In Lobby"}
-                                      </Badge>
-                                    ) : r.terminated ? (
-                                      <Badge className="bg-red-50 text-red-700 border border-red-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
-                                        {r.terminatedByAdmin ? "Disqualified (Admin)" : r.faceTurnTerminated ? "Disqualified (Face)" : "Disqualified (Tab)"}
-                                      </Badge>
+                                  {/* PROCTOR STATUS COLUMN */}
+                                  <td className="px-4 py-3.5 text-center">
+                                    {monitorExam?.assessmentType === "coding_hybrid" ? (
+                                      r.codingPhase === "ide_unlocked" ? (
+                                        <Badge className="bg-purple-100 text-purple-800 border border-purple-300 text-[10px] rounded font-extrabold uppercase py-0.5 px-2 animate-pulse">
+                                          IDE Unlocked
+                                        </Badge>
+                                      ) : r.isActive ? (
+                                        <Badge className="bg-blue-50 text-blue-700 border border-blue-100 text-[10px] rounded font-bold uppercase py-0.5 px-2 animate-pulse">
+                                          {r.assignedSet ? `Writing (${r.assignedSet})` : "In Lobby"}
+                                        </Badge>
+                                      ) : r.terminated ? (
+                                        <Badge className="bg-red-50 text-red-700 border border-red-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
+                                          {r.terminatedByAdmin ? "Disqualified (Admin)" : r.faceTurnTerminated ? "Disqualified (Face)" : "Disqualified (Tab)"}
+                                        </Badge>
+                                      ) : (
+                                        <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
+                                          Evaluated
+                                        </Badge>
+                                      )
                                     ) : (
-                                      <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
-                                        Evaluated
-                                      </Badge>
-                                    )
-                                  ) : (
-                                    r.isActive ? (
-                                      <Badge className="bg-blue-50 text-blue-700 border border-blue-100 text-[10px] rounded font-bold uppercase py-0.5 px-2 animate-pulse">
-                                        Active
-                                      </Badge>
-                                    ) : r.terminated ? (
-                                      <Badge className="bg-red-50 text-red-700 border border-red-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
-                                        {r.terminatedByAdmin ? "Disqualified (Admin)" : r.faceTurnTerminated ? "Disqualified (Face)" : "Disqualified (Tab)"}
-                                      </Badge>
-                                    ) : (
-                                      <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
-                                        Submitted
-                                      </Badge>
-                                    )
-                                  )}
-                                </td>
-                                <td className="px-6 py-4 text-slate-400 text-right">
-                                  {r.isActive ? (
-                                    <span className="text-emerald-600 font-bold animate-pulse">Active Now</span>
-                                  ) : r.submittedAt ? (
-                                    new Date(r.submittedAt).toLocaleString()
-                                  ) : (
-                                    "N/A"
-                                  )}
-                                </td>
-                                <td className="px-6 py-4 text-right">
-                                  <div className="flex justify-end gap-1.5">
-                                    {r.isActive && (
-                                      <Button
-                                        variant="destructive"
-                                        size="sm"
-                                        className="h-7 px-2 text-[10px] gap-1 font-bold bg-red-600 hover:bg-red-750 text-white rounded-lg flex items-center shadow-sm"
-                                        onClick={() => handleTerminateStudent(monitorExam.examCode, r.studentEmail)}
-                                      >
-                                        <AlertTriangle className="h-3 w-3" /> Terminate
-                                      </Button>
+                                      r.isActive ? (
+                                        <Badge className="bg-blue-50 text-blue-700 border border-blue-100 text-[10px] rounded font-bold uppercase py-0.5 px-2 animate-pulse">
+                                          Active
+                                        </Badge>
+                                      ) : r.terminated ? (
+                                        <Badge className="bg-red-50 text-red-700 border border-red-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
+                                          {r.terminatedByAdmin ? "Disqualified (Admin)" : r.faceTurnTerminated ? "Disqualified (Face)" : "Disqualified (Tab)"}
+                                        </Badge>
+                                      ) : (
+                                        <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
+                                          Submitted
+                                        </Badge>
+                                      )
                                     )}
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                                  </td>
+
+                                  {/* SUBMITTED AT COLUMN */}
+                                  <td className="px-4 py-3.5 text-slate-400 text-right">
+                                    {r.isActive ? (
+                                      <span className="text-emerald-600 font-bold animate-pulse">Active Now</span>
+                                    ) : r.submittedAt ? (
+                                      new Date(r.submittedAt).toLocaleString()
+                                    ) : (
+                                      "N/A"
+                                    )}
+                                  </td>
+
+                                  {/* ACTION COLUMN */}
+                                  <td className="px-4 py-3.5 text-right">
+                                    <div className="flex justify-end gap-1.5">
+                                      {r.isActive && (
+                                        <Button
+                                          variant="destructive"
+                                          size="sm"
+                                          disabled={actionLoadingMap[`terminate_${r.studentEmail}`]}
+                                          className="h-7 px-2 text-[10px] gap-1 font-bold bg-red-600 hover:bg-red-750 text-white rounded-lg flex items-center shadow-sm disabled:opacity-50"
+                                          onClick={() => handleTerminateStudent(monitorExam.examCode, r.studentEmail)}
+                                        >
+                                          {actionLoadingMap[`terminate_${r.studentEmail}`] ? (
+                                            <>
+                                              <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                              Terminating...
+                                            </>
+                                          ) : (
+                                            <>
+                                              <AlertTriangle className="h-3 w-3" /> Terminate
+                                            </>
+                                          )}
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
                   </div>
                 </div>
               )}
@@ -2941,11 +2942,11 @@ const AdminDashboard = () => {
                       No candidates have entered this coding assessment lobby yet.
                     </div>
                   ) : (
-                    <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white">
-                      <table className="w-full text-slate-700 text-xs text-left">
+                    <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-white shadow-sm">
+                      <table className="w-full text-slate-700 text-xs text-left align-middle border-collapse">
                         <thead>
-                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 uppercase font-bold text-[10px] tracking-wider">
-                            <th className="px-4 py-4 w-10 text-center">
+                          <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase font-bold text-[10px] tracking-wider whitespace-nowrap">
+                            <th className="px-4 py-3.5 w-12 text-center">
                               <input
                                 type="checkbox"
                                 checked={selectedStudentEmails.length > 0 && selectedStudentEmails.length === results.map((r: any) => r.studentEmail).filter(Boolean).length}
@@ -2953,21 +2954,21 @@ const AdminDashboard = () => {
                                 className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
                               />
                             </th>
-                            <th className="px-6 py-4">Student Name</th>
-                            <th className="px-6 py-4">Email Address</th>
-                            <th className="px-6 py-4 text-center">Assigned Set</th>
-                            <th className="px-6 py-4 text-center">Graded Marks Breakdown</th>
-                            <th className="px-6 py-4 text-center">IDE & Phase Status</th>
-                            <th className="px-6 py-4 text-right">Evaluation Controls</th>
+                            <th className="px-4 py-3.5 min-w-[160px]">Student Name</th>
+                            <th className="px-4 py-3.5 min-w-[220px]">Email Address</th>
+                            <th className="px-4 py-3.5 text-center min-w-[130px]">Assigned Set</th>
+                            <th className="px-4 py-3.5 text-center min-w-[200px]">Graded Marks Breakdown</th>
+                            <th className="px-4 py-3.5 text-center min-w-[150px]">IDE & Phase Status</th>
+                            <th className="px-4 py-3.5 text-right min-w-[280px]">Evaluation Controls</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
+                        <tbody className="divide-y divide-slate-100 font-sans">
                           {results.map((r) => {
                             const isCompleted = r.codingPhase === "completed" || !!r.submittedAt || (r._id && !r._id.toString().startsWith("active-"));
 
                             return (
-                              <tr key={r._id} className={`transition-colors ${selectedStudentEmails.includes(r.studentEmail) ? "bg-purple-50/60" : "hover:bg-slate-50/50"}`}>
-                                <td className="px-4 py-4 text-center">
+                              <tr key={r._id} className={`transition-colors whitespace-nowrap ${selectedStudentEmails.includes(r.studentEmail) ? "bg-purple-50/60" : "hover:bg-slate-50/60"}`}>
+                                <td className="px-4 py-3.5 text-center">
                                   <input
                                     type="checkbox"
                                     checked={selectedStudentEmails.includes(r.studentEmail)}
@@ -2975,17 +2976,17 @@ const AdminDashboard = () => {
                                     className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
                                   />
                                 </td>
-                                <td className="px-6 py-4 font-bold text-slate-800">
+                                <td className="px-4 py-3.5 font-bold text-slate-800">
                                   <div className="flex items-center gap-2">
-                                    {r.studentName}
+                                    <span>{r.studentName}</span>
                                     {r.isActive && !isCompleted && (
-                                      <span className={`w-2 h-2 rounded-full ${r.isOffline ? "bg-red-400" : "bg-emerald-500 animate-pulse"}`} title={r.isOffline ? "Offline" : "Active Online"} />
+                                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${r.isOffline ? "bg-red-400" : "bg-emerald-500 animate-pulse"}`} title={r.isOffline ? "Offline" : "Active Online"} />
                                     )}
                                   </div>
                                 </td>
-                                <td className="px-6 py-4 text-slate-500 font-mono text-[11px]">{r.studentEmail || "N/A"}</td>
+                                <td className="px-4 py-3.5 text-slate-500 font-mono text-[11px]">{r.studentEmail || "N/A"}</td>
                                 
-                                <td className="px-6 py-4 text-center">
+                                <td className="px-4 py-3.5 text-center">
                                   <span className={`px-2.5 py-1 text-xs font-black rounded-lg border ${
                                     r.assignedSet
                                       ? "bg-purple-600 text-white border-purple-700 shadow-sm"
@@ -2995,7 +2996,7 @@ const AdminDashboard = () => {
                                   </span>
                                 </td>
 
-                                <td className="px-6 py-4 text-center">
+                                <td className="px-4 py-3.5 text-center">
                                   <div className="flex flex-col items-center justify-center gap-1">
                                     <div className="flex items-center gap-2 text-[11px]">
                                       <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-bold border border-emerald-200">
@@ -3011,7 +3012,7 @@ const AdminDashboard = () => {
                                   </div>
                                 </td>
 
-                                <td className="px-6 py-4 text-center">
+                                <td className="px-4 py-3.5 text-center">
                                   {isCompleted ? (
                                     <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
                                       Completed & Graded
@@ -3031,11 +3032,11 @@ const AdminDashboard = () => {
                                   )}
                                 </td>
 
-                                <td className="px-6 py-4 text-right">
+                                <td className="px-4 py-3.5 text-right">
                                   <div className="flex justify-end items-center gap-2">
                                     <Button
                                       size="sm"
-                                      disabled={isCompleted}
+                                      disabled={isCompleted || actionLoadingMap[`toggleIde_${r.studentEmail}`]}
                                       className={`h-8 px-3 text-xs font-extrabold rounded-xl shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
                                         r.allowLocalIdeSwitch
                                           ? "bg-amber-500 hover:bg-amber-600 text-white"
@@ -3043,12 +3044,17 @@ const AdminDashboard = () => {
                                       }`}
                                       onClick={() => handleToggleIdeAccess(monitorExam?.examCode || "", r.studentEmail, !r.allowLocalIdeSwitch)}
                                     >
-                                      {r.allowLocalIdeSwitch ? "Lock IDE" : "Unlock IDE"}
+                                      {actionLoadingMap[`toggleIde_${r.studentEmail}`] ? (
+                                        <>
+                                          <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-1" />
+                                          Updating...
+                                        </>
+                                      ) : r.allowLocalIdeSwitch ? "Lock IDE" : "Unlock IDE"}
                                     </Button>
 
                                     <Button
                                       size="sm"
-                                      disabled={isCompleted}
+                                      disabled={isCompleted || actionLoadingMap[`updateMarks_${r.studentEmail}`]}
                                       className="h-8 px-3 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                       onClick={async () => {
                                         const { value: formValues } = await Swal.fire({
@@ -3077,16 +3083,26 @@ const AdminDashboard = () => {
                                         }
                                       }}
                                     >
-                                      Grade Marks
+                                      {actionLoadingMap[`updateMarks_${r.studentEmail}`] ? (
+                                        <>
+                                          <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-1" />
+                                          Saving...
+                                        </>
+                                      ) : "Grade Marks"}
                                     </Button>
 
                                     <Button
                                       size="sm"
-                                      disabled={isCompleted}
+                                      disabled={isCompleted || actionLoadingMap[`completeExam_${r.studentEmail}`]}
                                       className="h-8 px-3 text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                       onClick={() => handleCompleteCodingExam(monitorExam?.examCode || "", r.studentEmail)}
                                     >
-                                      {isCompleted ? "Finalized" : "Complete"}
+                                      {actionLoadingMap[`completeExam_${r.studentEmail}`] ? (
+                                        <>
+                                          <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-1" />
+                                          Finalizing...
+                                        </>
+                                      ) : isCompleted ? "Finalized" : "Complete"}
                                     </Button>
                                   </div>
                                 </td>
@@ -3712,17 +3728,16 @@ const AdminDashboard = () => {
                               </div>
                             </div>
                           </div>
-                        ))}`
+                        ))}
                       </div>
                     </div>
                   </div>
-                )
-              ) : (
-                <div className="text-center py-24 text-slate-400 bg-white border border-slate-200 rounded-2xl shadow-sm text-xs font-semibold">
-                  Please select an assessment exam from the dropdown list to generate performance reports.
-                </div>
-              )}
-            </div>
+                )) : (
+                  <div className="text-center py-24 text-slate-400 bg-white border border-slate-200 rounded-2xl shadow-sm text-xs font-semibold">
+                    Please select an assessment exam from the dropdown list to generate performance reports.
+                  </div>
+                )}
+              </div>
           ) : activeTab === "profile" ? (
             <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm max-w-xl text-left space-y-6">
               <div>
@@ -3989,7 +4004,7 @@ const AdminDashboard = () => {
       {/* ======================================= */}
       {/* 📂 QUESTION BANK EDITOR MODAL */}
       {/* ======================================= */}
-      <Dialog open={false} onOpenChange={(v) => !v && setManagingExamQuestions(null)}>
+      <Dialog open={!!managingExamQuestions} onOpenChange={(v) => !v && setManagingExamQuestions(null)}>
         <DialogContent className="max-w-4xl w-full rounded-2xl p-6 max-h-[80vh] overflow-y-auto font-sans">
           {managingExamQuestions && (
             <>
