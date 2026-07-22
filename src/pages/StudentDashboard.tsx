@@ -101,81 +101,12 @@ const StudentDashboard = () => {
     }
   }, [user]);
 
-  const handleProfileSendOtp = async () => {
-    setProfileError("");
-    setProfileSuccess("");
-
-    if (!profileName.trim() || !profileRollNumber.trim()) {
-      setProfileError("Name and Roll Number are required.");
-      return;
-    }
-    if (profileName === user?.name && profileRollNumber === user?.rollNumber) {
-      setProfileError("No changes detected. Update Name or Roll Number to proceed.");
-      return;
-    }
-
-    setProfileLoading(true);
-    try {
-      // Stagger queue to prevent simultaneous SMTP requests
-      const cleanEmail = (user?.email || "").toLowerCase().trim();
-      const delaySeconds = getStaggerDelay(cleanEmail);
-      if (delaySeconds > 0) {
-        for (let s = delaySeconds; s > 0; s--) {
-          setLoaderMessage(`Queued to prevent server overload (${s}s remaining)...`);
-          await new Promise((r) => setTimeout(r, 1000));
-        }
-      }
-      setLoaderMessage("");
-
-      const res = await fetch(`${BASE_URL}/auth/send-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: user?.email, name: profileName, rollNumber: profileRollNumber, mode: "update_profile" })
-      });
-      const data = await res.json();
-
-      if (res.status === 429) {
-        setProfileError(data.message || "Maximum OTP attempts reached.");
-        setProfileOtpCount(data.otpCount || 5);
-        setProfileRemainingAttempts(data.remainingAttempts || 0);
-        return;
-      }
-
-      if (res.ok) {
-        setProfileOtpSent(true);
-        setProfileOtpCount(data.otpCount || 0);
-        setProfileRemainingAttempts(data.remainingAttempts ?? 5);
-        Swal.fire({
-          title: "OTP Sent",
-          text: `A verification OTP has been sent to ${user?.email}. (${data.otpCount}/5 attempts used)`,
-          icon: "success",
-          confirmButtonColor: "#3b82f6"
-        });
-      } else if (res.status === 500 && data.message && data.message.includes("logged to the server console")) {
-        setProfileOtpSent(true);
-        Swal.fire({
-          title: "Mail Service Unavailable",
-          text: "The OTP has been generated. Please check the server console.",
-          icon: "warning",
-          confirmButtonColor: "#f59e0b"
-        });
-      } else {
-        setProfileError(data.message || "Failed to send OTP.");
-      }
-    } catch (err) {
-      console.error(err);
-      setProfileError("Network error. Failed to send OTP.");
-    } finally {
-      setProfileLoading(false);
-    }
-  };
-
   const handleProfileUpdate = async () => {
     setProfileError("");
     setProfileSuccess("");
 
-    if (!profileOtp.trim()) {
-      setProfileError("Please enter the 6-digit OTP code.");
+    if (!profileName.trim() || !profileRollNumber.trim()) {
+      setProfileError("Full Name and Roll Number cannot be empty.");
       return;
     }
 
@@ -184,7 +115,7 @@ const StudentDashboard = () => {
       const res = await fetch(`${BASE_URL}/auth/update-profile`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: user?.email, otp: profileOtp, name: profileName, rollNumber: profileRollNumber })
+        body: JSON.stringify({ email: user?.email, name: profileName.trim(), rollNumber: profileRollNumber.trim() })
       });
       const data = await res.json();
 
@@ -193,12 +124,11 @@ const StudentDashboard = () => {
         const updatedUser = { ...user, name: data.user.name, rollNumber: data.user.rollNumber };
         localStorage.setItem("user", JSON.stringify(updatedUser));
         setUser(updatedUser as any);
-        setProfileSuccess("Profile updated successfully!");
-        setProfileOtpSent(false);
-        setProfileOtp("");
+
+        setProfileSuccess("Candidate profile updated successfully!");
         Swal.fire({
           title: "Profile Updated",
-          text: "Your name and roll number have been updated successfully.",
+          text: "Your candidate credentials have been saved.",
           icon: "success",
           confirmButtonColor: "#3b82f6"
         });
@@ -211,35 +141,6 @@ const StudentDashboard = () => {
     } finally {
       setProfileLoading(false);
     }
-  };
-
-  const handleProfileResendOtp = async () => {
-    if (profileRemainingAttempts <= 0) {
-      setProfileError("Maximum 5 OTP email attempts reached. Please try again after 12 hours.");
-      return;
-    }
-    const result = await Swal.fire({
-      title: "Resend OTP?",
-      html: `
-        <p style="font-size: 13px; color: #475569; margin-bottom: 8px;">A new OTP will be sent to <strong>${user?.email}</strong>.</p>
-        <div style="background: #fef3c7; border: 1px solid #fbbf24; border-radius: 8px; padding: 10px; margin-top: 8px;">
-          <p style="font-size: 12px; color: #92400e; font-weight: 600; margin: 0;">
-            ⚠️ Warning: Maximum 5 OTP emails allowed per email ID.<br/>
-            You have used <strong>${profileOtpCount}/5</strong> attempts. Remaining: <strong>${profileRemainingAttempts}</strong>.
-          </p>
-        </div>
-      `,
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonColor: "#3b82f6",
-      cancelButtonColor: "#94a3b8",
-      confirmButtonText: "Yes, Resend OTP"
-    });
-    if (!result.isConfirmed) return;
-
-    setProfileOtp("");
-    setProfileError("");
-    await handleProfileSendOtp();
   };
 
   // 12-Hour Session Expiry Calculation
