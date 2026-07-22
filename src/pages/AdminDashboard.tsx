@@ -1328,6 +1328,15 @@ const AdminDashboard = () => {
     });
     if (confirm.isConfirmed) {
       try {
+        // Optimistically disable buttons and mark completed locally
+        setResults((prev) =>
+          prev.map((item) =>
+            item.studentEmail?.toLowerCase() === email.toLowerCase()
+              ? { ...item, codingPhase: "completed", allowLocalIdeSwitch: false, submittedAt: new Date().toISOString() }
+              : item
+          )
+        );
+
         const res = await fetch(`${BASE_URL}/exam/coding/complete-exam/${examCode}/${encodeURIComponent(email)}`, {
           method: "POST"
         });
@@ -2769,123 +2778,127 @@ const AdminDashboard = () => {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {results.map((r) => (
-                            <tr key={r._id} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="px-6 py-4 font-bold text-slate-800 flex items-center gap-2">
-                                {r.studentName}
-                                {r.isActive && (
-                                  <span className={`w-2 h-2 rounded-full ${r.isOffline ? "bg-red-400" : "bg-emerald-500 animate-pulse"}`} title={r.isOffline ? "Offline" : "Active Online"} />
-                                )}
-                              </td>
-                              <td className="px-6 py-4 text-slate-500 font-mono text-[11px]">{r.studentEmail || "N/A"}</td>
-                              
-                              <td className="px-6 py-4 text-center">
-                                <span className={`px-2.5 py-1 text-xs font-black rounded-lg border ${
-                                  r.assignedSet
-                                    ? "bg-purple-600 text-white border-purple-700 shadow-sm"
-                                    : "bg-amber-50 text-amber-800 border-amber-250 font-bold"
-                                }`}>
-                                  {r.assignedSet || "Awaiting Set"}
-                                </span>
-                              </td>
+                          {results.map((r) => {
+                            const isCompleted = r.codingPhase === "completed" || !!r.submittedAt || (r._id && !r._id.toString().startsWith("active-"));
 
-                              <td className="px-6 py-4 text-center">
-                                <div className="flex flex-col items-center justify-center gap-1">
-                                  <div className="flex items-center gap-2 text-[11px]">
-                                    <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-bold border border-emerald-200">
-                                      Paper: {r.paperLogicMarks || 0} / 50
-                                    </span>
-                                    <span className="text-purple-700 bg-purple-50 px-2 py-0.5 rounded font-bold border border-purple-200">
-                                      Exec: {r.executionOutputMarks || 0} / 50
+                            return (
+                              <tr key={r._id} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="px-6 py-4 font-bold text-slate-800 flex items-center gap-2">
+                                  {r.studentName}
+                                  {r.isActive && !isCompleted && (
+                                    <span className={`w-2 h-2 rounded-full ${r.isOffline ? "bg-red-400" : "bg-emerald-500 animate-pulse"}`} title={r.isOffline ? "Offline" : "Active Online"} />
+                                  )}
+                                </td>
+                                <td className="px-6 py-4 text-slate-500 font-mono text-[11px]">{r.studentEmail || "N/A"}</td>
+                                
+                                <td className="px-6 py-4 text-center">
+                                  <span className={`px-2.5 py-1 text-xs font-black rounded-lg border ${
+                                    r.assignedSet
+                                      ? "bg-purple-600 text-white border-purple-700 shadow-sm"
+                                      : "bg-amber-50 text-amber-800 border-amber-250 font-bold"
+                                  }`}>
+                                    {r.assignedSet || "Awaiting Set"}
+                                  </span>
+                                </td>
+
+                                <td className="px-6 py-4 text-center">
+                                  <div className="flex flex-col items-center justify-center gap-1">
+                                    <div className="flex items-center gap-2 text-[11px]">
+                                      <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-bold border border-emerald-200">
+                                        Paper: {r.paperLogicMarks || 0} / 50
+                                      </span>
+                                      <span className="text-purple-700 bg-purple-50 px-2 py-0.5 rounded font-bold border border-purple-200">
+                                        Exec: {r.executionOutputMarks || 0} / 50
+                                      </span>
+                                    </div>
+                                    <span className="text-slate-900 font-extrabold text-xs">
+                                      Total: {(r.paperLogicMarks || 0) + (r.executionOutputMarks || 0)} / 100
                                     </span>
                                   </div>
-                                  <span className="text-slate-900 font-extrabold text-xs">
-                                    Total: {(r.paperLogicMarks || 0) + (r.executionOutputMarks || 0)} / 100
-                                  </span>
-                                </div>
-                              </td>
+                                </td>
 
-                              <td className="px-6 py-4 text-center">
-                                {r.codingPhase === "completed" ? (
-                                  <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
-                                    Completed & Graded
-                                  </Badge>
-                                ) : r.allowLocalIdeSwitch ? (
-                                  <Badge className="bg-purple-100 text-purple-800 border border-purple-300 text-[10px] rounded font-black uppercase py-0.5 px-2.5 animate-pulse">
-                                    IDE Access Unlocked
-                                  </Badge>
-                                ) : r.isActive ? (
-                                  <Badge className="bg-blue-50 text-blue-700 border border-blue-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
-                                    {r.assignedSet ? `Writing (${r.assignedSet})` : "In Lobby"}
-                                  </Badge>
-                                ) : (
-                                  <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
-                                    Completed & Graded
-                                  </Badge>
-                                )}
-                              </td>
+                                <td className="px-6 py-4 text-center">
+                                  {isCompleted ? (
+                                    <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
+                                      Completed & Graded
+                                    </Badge>
+                                  ) : r.allowLocalIdeSwitch ? (
+                                    <Badge className="bg-purple-100 text-purple-800 border border-purple-300 text-[10px] rounded font-black uppercase py-0.5 px-2.5 animate-pulse">
+                                      IDE Access Unlocked
+                                    </Badge>
+                                  ) : r.isActive ? (
+                                    <Badge className="bg-blue-50 text-blue-700 border border-blue-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
+                                      {r.assignedSet ? `Writing (${r.assignedSet})` : "In Lobby"}
+                                    </Badge>
+                                  ) : (
+                                    <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
+                                      Completed & Graded
+                                    </Badge>
+                                  )}
+                                </td>
 
-                              <td className="px-6 py-4 text-right">
-                                <div className="flex justify-end items-center gap-2">
-                                  <Button
-                                    size="sm"
-                                    disabled={r.codingPhase === "completed"}
-                                    className={`h-8 px-3 text-xs font-extrabold rounded-xl shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
-                                      r.allowLocalIdeSwitch
-                                        ? "bg-amber-500 hover:bg-amber-600 text-white"
-                                        : "bg-purple-600 hover:bg-purple-700 text-white"
-                                    }`}
-                                    onClick={() => handleToggleIdeAccess(monitorExam?.examCode || "", r.studentEmail, !r.allowLocalIdeSwitch)}
-                                  >
-                                    {r.allowLocalIdeSwitch ? "Lock IDE" : "Unlock IDE"}
-                                  </Button>
+                                <td className="px-6 py-4 text-right">
+                                  <div className="flex justify-end items-center gap-2">
+                                    <Button
+                                      size="sm"
+                                      disabled={isCompleted}
+                                      className={`h-8 px-3 text-xs font-extrabold rounded-xl shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
+                                        r.allowLocalIdeSwitch
+                                          ? "bg-amber-500 hover:bg-amber-600 text-white"
+                                          : "bg-purple-600 hover:bg-purple-700 text-white"
+                                      }`}
+                                      onClick={() => handleToggleIdeAccess(monitorExam?.examCode || "", r.studentEmail, !r.allowLocalIdeSwitch)}
+                                    >
+                                      {r.allowLocalIdeSwitch ? "Lock IDE" : "Unlock IDE"}
+                                    </Button>
 
-                                  <Button
-                                    size="sm"
-                                    disabled={r.codingPhase === "completed"}
-                                    className="h-8 px-3 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                                    onClick={async () => {
-                                      const { value: formValues } = await Swal.fire({
-                                        title: `Grade Candidate: ${r.studentName}`,
-                                        html:
-                                          `<div class="text-left text-xs space-y-3 font-bold text-slate-700">` +
-                                          `<div><label class="block mb-1">Paper Logic Marks (Max: 50)</label><input id="swal-paper" type="number" class="w-full h-9 px-3 border rounded-lg text-sm bg-slate-50" value="${r.paperLogicMarks || 0}" /></div>` +
-                                          `<div><label class="block mb-1">Execution Output Marks (Max: 50)</label><input id="swal-exec" type="number" class="w-full h-9 px-3 border rounded-lg text-sm bg-slate-50" value="${r.executionOutputMarks || 0}" /></div>` +
-                                          `</div>`,
-                                        focusConfirm: false,
-                                        showCancelButton: true,
-                                        confirmButtonText: "Save Marks",
-                                        confirmButtonColor: "#3b82f6",
-                                        preConfirm: () => {
-                                          return [
-                                            (document.getElementById("swal-paper") as HTMLInputElement).value,
-                                            (document.getElementById("swal-exec") as HTMLInputElement).value
-                                          ];
+                                    <Button
+                                      size="sm"
+                                      disabled={isCompleted}
+                                      className="h-8 px-3 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                      onClick={async () => {
+                                        const { value: formValues } = await Swal.fire({
+                                          title: `Grade Candidate: ${r.studentName}`,
+                                          html:
+                                            `<div class="text-left text-xs space-y-3 font-bold text-slate-700">` +
+                                            `<div><label class="block mb-1">Paper Logic Marks (Max: 50)</label><input id="swal-paper" type="number" class="w-full h-9 px-3 border rounded-lg text-sm bg-slate-50" value="${r.paperLogicMarks || 0}" /></div>` +
+                                            `<div><label class="block mb-1">Execution Output Marks (Max: 50)</label><input id="swal-exec" type="number" class="w-full h-9 px-3 border rounded-lg text-sm bg-slate-50" value="${r.executionOutputMarks || 0}" /></div>` +
+                                            `</div>`,
+                                          focusConfirm: false,
+                                          showCancelButton: true,
+                                          confirmButtonText: "Save Marks",
+                                          confirmButtonColor: "#3b82f6",
+                                          preConfirm: () => {
+                                            return [
+                                              (document.getElementById("swal-paper") as HTMLInputElement).value,
+                                              (document.getElementById("swal-exec") as HTMLInputElement).value
+                                            ];
+                                          }
+                                        });
+
+                                        if (formValues) {
+                                          const pMarks = parseInt(formValues[0]) || 0;
+                                          const eMarks = parseInt(formValues[1]) || 0;
+                                          await handleUpdateCodingMarks(monitorExam?.examCode || "", r.studentEmail, pMarks, eMarks);
                                         }
-                                      });
+                                      }}
+                                    >
+                                      Grade Marks
+                                    </Button>
 
-                                      if (formValues) {
-                                        const pMarks = parseInt(formValues[0]) || 0;
-                                        const eMarks = parseInt(formValues[1]) || 0;
-                                        await handleUpdateCodingMarks(monitorExam?.examCode || "", r.studentEmail, pMarks, eMarks);
-                                      }
-                                    }}
-                                  >
-                                    Grade Marks
-                                  </Button>
-
-                                  <Button
-                                    size="sm"
-                                    disabled={r.codingPhase === "completed"}
-                                    className="h-8 px-3 text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                                    onClick={() => handleCompleteCodingExam(monitorExam?.examCode || "", r.studentEmail)}
-                                  >
-                                    {r.codingPhase === "completed" ? "Finalized" : "Complete"}
-                                  </Button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
+                                    <Button
+                                      size="sm"
+                                      disabled={isCompleted}
+                                      className="h-8 px-3 text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                      onClick={() => handleCompleteCodingExam(monitorExam?.examCode || "", r.studentEmail)}
+                                    >
+                                      {isCompleted ? "Finalized" : "Complete"}
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

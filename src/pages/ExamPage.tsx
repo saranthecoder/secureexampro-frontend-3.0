@@ -32,6 +32,26 @@ import {
 } from "lucide-react";
 import BASE_URL from "@/config/api";
 
+function getGoogleDriveEmbedUrl(url: string): string {
+  if (!url) return "";
+  let cleanUrl = url.trim();
+
+  // Convert Google Drive & Docs links (/view, /edit, etc.) to /preview for embedded iframe viewing
+  if (cleanUrl.includes("drive.google.com/file/d/")) {
+    cleanUrl = cleanUrl.replace(/\/view(\?.*)?$/, "/preview").replace(/\/edit(\?.*)?$/, "/preview");
+    if (!cleanUrl.endsWith("/preview")) {
+      cleanUrl = cleanUrl.split("?")[0] + "/preview";
+    }
+  } else if (cleanUrl.includes("docs.google.com/document/d/")) {
+    cleanUrl = cleanUrl.replace(/\/edit(\?.*)?$/, "/preview").replace(/\/view(\?.*)?$/, "/preview");
+    if (!cleanUrl.endsWith("/preview")) {
+      cleanUrl = cleanUrl.split("?")[0] + "/preview";
+    }
+  }
+
+  return cleanUrl;
+}
+
 const ExamPage = () => {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
@@ -1000,7 +1020,7 @@ const ExamPage = () => {
 
   const activeCodingProblem = codingProblems[currentCodingProblemIndex] || codingProblems[0];
 
-  const duration = exam?.duration ?? 0;
+  const duration = exam?.assessmentType === "coding_hybrid" ? 0 : (exam?.duration ?? 0);
 
   // =======================
   // 🕒 TIMER HOOK
@@ -2118,7 +2138,7 @@ const ExamPage = () => {
                       <span className="bg-purple-600 text-white px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider">
                         {assignedSet || currentSetObj?.setName || "Set A"}
                       </span>
-                      <span className="text-xs font-bold text-slate-400">Coding Hybrid Question Paper</span>
+                      <span className="text-xs font-bold text-slate-400">Coding Assessment Question Paper</span>
                     </div>
 
                     <div className="flex items-center gap-2 text-xs font-bold">
@@ -2134,77 +2154,50 @@ const ExamPage = () => {
                     </div>
                   </div>
 
-                  {/* MULTI-PROBLEM NAVIGATION BAR (Pill Selectors & Forward/Backward) */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest mr-1">
-                        Problems ({codingProblems.length}):
-                      </span>
-                      {codingProblems.map((p: any, idx: number) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setCurrentCodingProblemIndex(idx)}
-                          className={`px-3 py-1 rounded-lg text-xs font-black transition-all ${
-                            currentCodingProblemIndex === idx
-                              ? "bg-purple-600 text-white shadow-md shadow-purple-600/30 scale-105"
-                              : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
-                          }`}
-                        >
-                          {p.title || `Problem ${idx + 1}`}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        disabled={currentCodingProblemIndex === 0}
-                        onClick={() => setCurrentCodingProblemIndex((i) => Math.max(0, i - 1))}
-                        className="h-8 px-3 text-xs font-extrabold bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 rounded-lg gap-1 border border-slate-700"
-                      >
-                        <ChevronLeft className="h-3.5 w-3.5" /> Previous Problem
-                      </Button>
-                      <Button
-                        size="sm"
-                        disabled={currentCodingProblemIndex >= codingProblems.length - 1}
-                        onClick={() => setCurrentCodingProblemIndex((i) => Math.min(codingProblems.length - 1, i + 1))}
-                        className="h-8 px-3 text-xs font-extrabold bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white rounded-lg gap-1 shadow-sm"
-                      >
-                        Next Problem <ChevronRight className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* ACTIVE PROBLEM STATEMENT */}
-                  <div className="space-y-1.5">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-purple-400">
-                      Problem Statement #{currentCodingProblemIndex + 1}: {activeCodingProblem?.title || `Problem ${currentCodingProblemIndex + 1}`}
-                    </div>
-                    <div className="text-sm font-mono leading-relaxed text-slate-200 whitespace-pre-wrap bg-slate-950 p-4 rounded-xl border border-slate-800">
-                      {activeCodingProblem?.problemStatement || currentSetObj?.problemStatement || "Write code and logic for your assigned set problem."}
-                    </div>
-                  </div>
-
-                  {/* SAMPLE INPUT & OUTPUT */}
-                  {(activeCodingProblem?.sampleInputOutput || currentSetObj?.sampleInputOutput) && (
-                    <div className="space-y-1.5 pt-1">
-                      <div className="text-[10px] font-bold uppercase tracking-widest text-amber-400">
-                        Sample Inputs & Expected Outputs (Problem #{currentCodingProblemIndex + 1})
+                  {/* GOOGLE DRIVE EMBEDDED QUESTION PAPER PDF PREVIEW */}
+                  {currentSetObj?.driveUrl ? (
+                    <div className="space-y-2 pt-1">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-purple-400 flex items-center gap-1.5">
+                          <FileText className="h-3.5 w-3.5 text-purple-400" />
+                          Official Set Question Paper Document ({assignedSet || currentSetObj?.setName || "Set A"})
+                        </span>
+                        <span className="text-[10px] bg-purple-900/60 text-purple-200 border border-purple-700/60 px-2.5 py-0.5 rounded font-mono font-bold">
+                          Secure Document View Active
+                        </span>
                       </div>
-                      <div className="text-xs font-mono leading-relaxed text-amber-300 whitespace-pre-wrap bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                        {activeCodingProblem?.sampleInputOutput || currentSetObj?.sampleInputOutput}
+                      <div className="w-full h-[700px] rounded-xl border border-slate-800 bg-slate-950 overflow-hidden shadow-inner relative group">
+                        {/* TOP-RIGHT OVERLAY: Blocks Google Drive Pop-out button */}
+                        <div
+                          className="absolute top-0 right-0 w-20 h-16 z-20 cursor-not-allowed"
+                          title="External pop-out disabled for exam security"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                        />
+
+                        {/* BOTTOM-CENTER OVERLAY: Blocks floating zoom / page jump bar */}
+                        <div
+                          className="absolute bottom-0 left-1/2 -translate-x-1/2 w-80 h-14 z-20 cursor-not-allowed"
+                          title="Zoom / page jump controls disabled"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                        />
+
+                        <iframe
+                          src={getGoogleDriveEmbedUrl(currentSetObj.driveUrl)}
+                          className="w-full h-full border-0"
+                          title={`Question Paper ${assignedSet || currentSetObj?.setName}`}
+                          allow="autoplay"
+                        />
                       </div>
                     </div>
-                  )}
-
-                  {/* CANDIDATE INSTRUCTIONS */}
-                  {(activeCodingProblem?.instructions || currentSetObj?.instructions) && (
-                    <div className="space-y-1.5 pt-1">
-                      <div className="text-[10px] font-bold uppercase tracking-widest text-blue-400">Candidate Evaluation Instructions</div>
-                      <div className="text-xs font-mono text-slate-300 whitespace-pre-wrap bg-slate-950 p-3 rounded-xl border border-slate-800">
-                        {activeCodingProblem?.instructions || currentSetObj?.instructions}
-                      </div>
+                  ) : (
+                    <div className="p-8 text-center text-slate-400 font-mono text-xs border border-slate-800 rounded-xl bg-slate-950">
+                      📄 Question Paper URL not attached for {assignedSet || "this set"}. Please notify examiner.
                     </div>
                   )}
                 </div>

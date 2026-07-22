@@ -257,7 +257,7 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
       const formData = new FormData();
       formData.append("title", title);
       formData.append("examCode", code.toUpperCase());
-      formData.append("duration", duration);
+      formData.append("duration", assessmentType === "coding_hybrid" ? "0" : duration);
       formData.append(
         "startTime",
         startTime ? new Date(startTime).toISOString() : "",
@@ -415,12 +415,18 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-700">Duration (min)</Label>
-                <Input
-                  type="number"
-                  value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
-                  className="bg-white border-slate-200 focus-visible:ring-blue-500 text-sm h-10"
-                />
+                {assessmentType === "coding_hybrid" ? (
+                  <div className="h-10 px-3 flex items-center bg-purple-50 border border-purple-200 text-purple-900 rounded-md text-xs font-bold font-mono">
+                    Untimed (Examiner Controlled)
+                  </div>
+                ) : (
+                  <Input
+                    type="number"
+                    value={duration}
+                    onChange={(e) => setDuration(e.target.value)}
+                    className="bg-white border-slate-200 focus-visible:ring-blue-500 text-sm h-10"
+                  />
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-700">Start window</Label>
@@ -558,48 +564,16 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
                       <div className="flex items-center justify-between border-b pb-2">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-black text-purple-900 bg-purple-100 px-2.5 py-1 rounded-md">{s.setName}</span>
-                          <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-150">
-                            {setProblems.length} {setProblems.length === 1 ? "Problem" : "Problems"} in Set
-                          </span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Button
+                        {questionSets.length > 1 && (
+                          <button
                             type="button"
-                            size="sm"
-                            onClick={() => {
-                              const updated = [...questionSets];
-                              const pList = updated[idx].problems || [
-                                {
-                                  title: "Problem 1",
-                                  problemStatement: updated[idx].problemStatement || "",
-                                  sampleInputOutput: updated[idx].sampleInputOutput || "",
-                                  instructions: updated[idx].instructions || ""
-                                }
-                              ];
-                              pList.push({
-                                title: `Problem ${pList.length + 1}`,
-                                problemStatement: `${s.setName} Problem ${pList.length + 1}: Write problem statement...`,
-                                sampleInputOutput: "Input:\nOutput:",
-                                instructions: "1. Write logic on paper.\n2. Execute code in local IDE."
-                              });
-                              updated[idx].problems = pList;
-                              updated[idx].problemStatement = pList[0].problemStatement;
-                              setQuestionSets(updated);
-                            }}
-                            className="bg-purple-100 hover:bg-purple-200 text-purple-900 font-extrabold text-[11px] h-7 px-2.5 rounded-lg border border-purple-300"
+                            onClick={() => setQuestionSets(questionSets.filter((_, i) => i !== idx))}
+                            className="text-red-500 hover:text-red-700 text-xs font-bold"
                           >
-                            + Add Problem to {s.setName}
-                          </Button>
-                          {questionSets.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => setQuestionSets(questionSets.filter((_, i) => i !== idx))}
-                              className="text-red-500 hover:text-red-700 text-xs font-bold ml-2"
-                            >
-                              Remove Set
-                            </button>
-                          )}
-                        </div>
+                            Remove Set
+                          </button>
+                        )}
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
@@ -631,64 +605,25 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
                         </div>
                       </div>
 
-                      {/* PROBLEMS LIST FOR THIS SET */}
-                      <div className="space-y-3 pt-1">
-                        {setProblems.map((prob: any, pIdx: number) => (
-                          <div key={pIdx} className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2 text-white">
-                            <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
-                              <span className="text-[11px] font-extrabold text-purple-400">
-                                📌 {s.setName} — Question #{pIdx + 1} ({prob.title || `Problem ${pIdx + 1}`})
-                              </span>
-                              {setProblems.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const updated = [...questionSets];
-                                    const filtered = setProblems.filter((_: any, i: number) => i !== pIdx);
-                                    updated[idx].problems = filtered;
-                                    if (filtered.length > 0) updated[idx].problemStatement = filtered[0].problemStatement;
-                                    setQuestionSets(updated);
-                                  }}
-                                  className="text-red-400 hover:text-red-300 text-[10px] font-bold"
-                                >
-                                  Remove Problem #{pIdx + 1}
-                                </button>
-                              )}
-                            </div>
-
-                            <div>
-                              <Label className="text-[10px] font-bold text-purple-300 block mb-1">Problem Statement #{pIdx + 1}</Label>
-                              <textarea
-                                value={prob.problemStatement}
-                                onChange={(e) => {
-                                  const updated = [...questionSets];
-                                  const pList = [...setProblems];
-                                  pList[pIdx].problemStatement = e.target.value;
-                                  updated[idx].problems = pList;
-                                  if (pIdx === 0) updated[idx].problemStatement = e.target.value;
-                                  setQuestionSets(updated);
-                                }}
-                                className="w-full min-h-[55px] p-2 text-xs font-mono border border-slate-800 rounded-lg bg-slate-900 text-green-400 focus:outline-none"
-                              />
-                            </div>
-
-                            <div>
-                              <Label className="text-[10px] font-bold text-amber-300 block mb-1">Sample Inputs & Outputs #{pIdx + 1}</Label>
-                              <textarea
-                                value={prob.sampleInputOutput}
-                                onChange={(e) => {
-                                  const updated = [...questionSets];
-                                  const pList = [...setProblems];
-                                  pList[pIdx].sampleInputOutput = e.target.value;
-                                  updated[idx].problems = pList;
-                                  if (pIdx === 0) updated[idx].sampleInputOutput = e.target.value;
-                                  setQuestionSets(updated);
-                                }}
-                                className="w-full min-h-[45px] p-2 text-xs font-mono border border-slate-800 rounded-lg bg-slate-900 text-amber-300 focus:outline-none"
-                              />
-                            </div>
-                          </div>
-                        ))}
+                      {/* GOOGLE DRIVE QUESTION PAPER URL */}
+                      <div>
+                        <Label className="text-[10px] font-extrabold text-purple-900 block mb-1">
+                          📄 Google Drive Question Paper URL (PDF / Document Link for {s.setName})
+                        </Label>
+                        <Input
+                          type="url"
+                          placeholder="e.g. https://drive.google.com/file/d/1ABC.../view or https://docs.google.com/document/d/.../edit"
+                          value={s.driveUrl || ""}
+                          onChange={(e) => {
+                            const updated = [...questionSets];
+                            updated[idx].driveUrl = e.target.value;
+                            setQuestionSets(updated);
+                          }}
+                          className="h-9 text-xs bg-purple-50/50 border-purple-200 font-mono text-purple-950"
+                        />
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          Paste Google Drive PDF or Document view link. The PDF preview will be embedded directly in the student's secure exam panel.
+                        </p>
                       </div>
                     </div>
                   );
