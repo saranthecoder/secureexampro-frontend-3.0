@@ -51,6 +51,26 @@ import {
   Menu,
 } from "lucide-react";
 
+function getGoogleDriveEmbedUrl(url: string): string {
+  if (!url) return "";
+  let cleanUrl = url.trim();
+
+  // Convert Google Drive & Docs links (/view, /edit, etc.) to /preview for embedded iframe viewing
+  if (cleanUrl.includes("drive.google.com/file/d/")) {
+    cleanUrl = cleanUrl.replace(/\/view(\?.*)?$/, "/preview").replace(/\/edit(\?.*)?$/, "/preview");
+    if (!cleanUrl.endsWith("/preview")) {
+      cleanUrl = cleanUrl.split("?")[0] + "/preview";
+    }
+  } else if (cleanUrl.includes("docs.google.com/document/d/")) {
+    cleanUrl = cleanUrl.replace(/\/edit(\?.*)?$/, "/preview").replace(/\/view(\?.*)?$/, "/preview");
+    if (!cleanUrl.endsWith("/preview")) {
+      cleanUrl = cleanUrl.split("?")[0] + "/preview";
+    }
+  }
+
+  return cleanUrl;
+}
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const [exams, setExams] = useState<any[]>([]);
@@ -190,6 +210,16 @@ const AdminDashboard = () => {
   const [analysisResults, setAnalysisResults] = useState<any[]>([]);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [selectedExamCodeForQuestions, setSelectedExamCodeForQuestions] = useState("");
+  const [selectedSetPreviewIndex, setSelectedSetPreviewIndex] = useState<number>(0);
+
+  useEffect(() => {
+    if (selectedExamCodeForQuestions && exams.length > 0) {
+      const found = exams.find((ex) => ex.examCode === selectedExamCodeForQuestions);
+      if (found) {
+        setManagingExamQuestions(found);
+      }
+    }
+  }, [exams, selectedExamCodeForQuestions]);
   const [selectedExamCodeForAnalysis, setSelectedExamCodeForAnalysis] = useState("");
   const [scorecardSearchQuery, setScorecardSearchQuery] = useState("");
   const [scorecardStatusFilter, setScorecardStatusFilter] = useState("all");
@@ -3183,14 +3213,28 @@ const AdminDashboard = () => {
                 <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-sm space-y-4">
                   <div className="border-b border-slate-100 pb-3 mb-3 flex flex-col md:flex-row md:items-center justify-between gap-3 text-left">
                     <div>
-                      <h2 className="text-base font-black text-slate-900">
-                        Question Bank: {managingExamQuestions.title} ({managingExamQuestions.examCode})
-                      </h2>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-base font-black text-slate-900">
+                          Question Bank: {managingExamQuestions.title} ({managingExamQuestions.examCode})
+                        </h2>
+                        {managingExamQuestions.assessmentType === "coding_hybrid" ? (
+                          <span className="bg-purple-100 text-purple-800 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-purple-200 uppercase">
+                            Coding Assessment (Multi-Set)
+                          </span>
+                        ) : (
+                          <span className="bg-blue-100 text-blue-800 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-blue-200 uppercase">
+                            Standard MCQ Assessment
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
-                        Manage individual questions, types, options, correct answers, and marks scoring.
+                        {managingExamQuestions.assessmentType === "coding_hybrid"
+                          ? "Preview and inspect question paper sets (Set A, B, C, D), Google Drive PDF documents, and problem statements."
+                          : "Manage individual questions, types, options, correct answers, and marks scoring."}
                       </p>
                     </div>
-                    {editingQuestionIndex === null && (
+
+                    {managingExamQuestions.assessmentType !== "coding_hybrid" && editingQuestionIndex === null && (
                       <Button
                         onClick={handleStartAddQuestion}
                         className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-3 rounded-lg flex items-center gap-1 self-start md:self-center shrink-0"
@@ -3198,9 +3242,134 @@ const AdminDashboard = () => {
                         <Plus className="h-4 w-4" /> Add Question
                       </Button>
                     )}
+
+                    {managingExamQuestions.assessmentType === "coding_hybrid" && (
+                      <Button
+                        onClick={() => handleOpenEditModal(managingExamQuestions)}
+                        className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 self-start md:self-center shrink-0 shadow"
+                      >
+                        <FileText className="h-4 w-4" /> Edit Paper Sets
+                      </Button>
+                    )}
                   </div>
 
-                  {editingQuestionIndex !== null ? (
+                  {managingExamQuestions.assessmentType === "coding_hybrid" ? (
+                    /* ==================================================== */
+                    /* 📜 CODING HYBRID QUESTION SETS PREVIEW & INSPECTOR */
+                    /* ==================================================== */
+                    <div className="space-y-6 text-left">
+                      {(!managingExamQuestions.questionSets || managingExamQuestions.questionSets.length === 0) ? (
+                        <div className="text-center py-16 text-slate-400 bg-slate-50 rounded-2xl border border-slate-200 text-xs font-semibold">
+                          <AlertTriangle className="mx-auto h-8 w-8 text-amber-500 mb-2" />
+                          No question sets configured for this coding assessment yet.
+                        </div>
+                      ) : (
+                        <div>
+                          {/* SET SELECTION TABS */}
+                          <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3 mb-4">
+                            {managingExamQuestions.questionSets.map((qs: any, sIdx: number) => {
+                              const isSelected = selectedSetPreviewIndex === sIdx;
+                              return (
+                                <button
+                                  key={qs.setName || sIdx}
+                                  onClick={() => setSelectedSetPreviewIndex(sIdx)}
+                                  className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
+                                    isSelected
+                                      ? "bg-purple-600 text-white shadow-md shadow-purple-500/25 scale-[1.02]"
+                                      : "bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200"
+                                  }`}
+                                >
+                                  <Layers className="h-3.5 w-3.5" />
+                                  {qs.setName || `Set ${String.fromCharCode(65 + sIdx)}`}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* SELECTED SET PREVIEW CONTAINER */}
+                          {(() => {
+                            const currentSet = managingExamQuestions.questionSets[selectedSetPreviewIndex] || managingExamQuestions.questionSets[0];
+                            if (!currentSet) return null;
+
+                            return (
+                              <div className="space-y-4">
+                                {/* SET METRICS BANNER */}
+                                <div className="p-4 bg-slate-900 text-white rounded-2xl border border-slate-800 flex flex-wrap items-center justify-between gap-3 shadow">
+                                  <div className="flex items-center gap-3">
+                                    <span className="bg-purple-600 text-white px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider">
+                                      {currentSet.setName || `Set ${String.fromCharCode(65 + selectedSetPreviewIndex)}`}
+                                    </span>
+                                    <div>
+                                      <h3 className="text-sm font-bold text-white">Official Question Paper Document</h3>
+                                      <p className="text-[10px] text-slate-400">Assigned candidate paper set</p>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 text-xs font-bold">
+                                    <span className="bg-slate-800 text-purple-300 px-3 py-1 rounded-lg border border-purple-500/30">
+                                      Paper Marks: {currentSet.paperMaxMarks || 50}
+                                    </span>
+                                    <span className="bg-slate-800 text-indigo-300 px-3 py-1 rounded-lg border border-indigo-500/30">
+                                      Execution Marks: {currentSet.executionMaxMarks || 50}
+                                    </span>
+                                    <span className="bg-emerald-950 text-emerald-400 px-3 py-1 rounded-lg border border-emerald-800 font-black">
+                                      Total: {(currentSet.paperMaxMarks || 50) + (currentSet.executionMaxMarks || 50)} Marks
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* GOOGLE DRIVE EMBEDDED PDF PREVIEW */}
+                                {currentSet.driveUrl ? (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                                      <span className="flex items-center gap-1.5 text-purple-700 font-extrabold">
+                                        <FileText className="h-4 w-4" /> Live PDF Question Paper Preview ({currentSet.setName})
+                                      </span>
+                                      <a
+                                        href={currentSet.driveUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-blue-600 hover:underline text-[11px] font-semibold"
+                                      >
+                                        Open in Google Drive ↗
+                                      </a>
+                                    </div>
+
+                                    <div className="w-full h-[650px] rounded-2xl border border-slate-300 bg-slate-950 overflow-hidden shadow-inner relative">
+                                      <iframe
+                                        src={getGoogleDriveEmbedUrl(currentSet.driveUrl)}
+                                        className="w-full h-full border-0"
+                                        title={`Question Paper ${currentSet.setName}`}
+                                        allow="autoplay"
+                                      />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="p-12 text-center text-slate-400 bg-amber-50/50 border border-amber-200 rounded-2xl space-y-2">
+                                    <AlertTriangle className="mx-auto h-8 w-8 text-amber-500" />
+                                    <p className="text-xs font-bold text-amber-800">No Google Drive PDF URL attached for {currentSet.setName}.</p>
+                                    <p className="text-[11px] text-amber-600">Click "Edit Paper Sets" above to attach the official PDF question paper link for candidates.</p>
+                                  </div>
+                                )}
+
+                                {/* PROBLEMS / INSTRUCTIONS PREVIEW */}
+                                {(currentSet.problemStatement || (currentSet.problems && currentSet.problems.length > 0)) && (
+                                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Problem Statement & Instructions</h4>
+                                    {currentSet.problemStatement && (
+                                      <div className="text-xs text-slate-700 bg-white p-3 rounded-xl border border-slate-200 whitespace-pre-wrap font-mono">
+                                        {currentSet.problemStatement}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  ) : editingQuestionIndex !== null ? (
                     <div className="space-y-4 pt-2 text-left text-xs font-bold text-slate-700">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-1.5">
