@@ -772,10 +772,10 @@ const ExamPage = () => {
 
     const parsedUser = JSON.parse(localStorage.getItem("user") || "{}");
     const payload = {
-      studentName: parsedUser.name,
-      studentEmail: parsedUser.email,
+      studentName: parsedUser.name || (parsedUser.email ? parsedUser.email.split("@")[0] : "Student"),
+      studentEmail: parsedUser.email || "",
       studentRollNumber: parsedUser.rollNumber || "",
-      answers,
+      answers: answers || [],
       terminated: isTerminatedByAdmin,
       tabSwitch: finalTabSwitchCount > 0,
       tabSwitchCount: finalTabSwitchCount,
