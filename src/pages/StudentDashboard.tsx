@@ -1325,11 +1325,10 @@ const StudentDashboard = () => {
                   Edit Profile
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Update your name or roll number. An OTP will be sent to your registered email for identity verification before saving changes.
+                  Update your candidate full name or roll number. Click Save Profile Changes to save your credentials.
                 </p>
 
-                {!profileOtpSent ? (
-                  <div className="space-y-4">
+                <div className="space-y-4">
                     <div className="space-y-1.5">
                       <Label className="text-xs font-semibold text-slate-700">Full Name</Label>
                       <Input
@@ -1372,79 +1371,13 @@ const StudentDashboard = () => {
 
                     <Button
                       type="button"
-                      onClick={handleProfileSendOtp}
+                      onClick={handleProfileUpdate}
                       disabled={profileLoading}
                       className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold h-11 text-sm shadow-md transition-all rounded-xl flex items-center justify-center gap-1.5"
                     >
-                      <Mail className="h-4 w-4" /> Send Verification OTP to Save Changes
+                      <Save className="h-4 w-4" /> Save Profile Changes
                     </Button>
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    {/* OTP Rate Limit Warning */}
-                    {profileOtpCount > 0 && (
-                      <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 border border-amber-200 flex items-start gap-2">
-                        <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
-                        <div>
-                          <p className="font-bold">OTP Attempt Limit Warning</p>
-                          <p className="mt-0.5">Maximum 5 OTP emails allowed per email ID. You have used <strong>{profileOtpCount}/5</strong> attempts. Remaining: <strong>{profileRemainingAttempts}</strong>.</p>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between items-center">
-                        <Label className="text-xs font-semibold text-slate-700">Enter Verification OTP</Label>
-                        <span
-                          className="text-[10px] text-blue-600 font-bold cursor-pointer hover:underline"
-                          onClick={() => { setProfileOtpSent(false); setProfileOtp(""); setProfileError(""); }}
-                        >
-                          Cancel &amp; Go Back
-                        </span>
-                      </div>
-                      <Input
-                        placeholder="Enter 6-digit code"
-                        value={profileOtp}
-                        onChange={(e) => setProfileOtp(e.target.value)}
-                        className="bg-slate-50/50 border-slate-200 focus-visible:ring-blue-500 h-11 text-center text-lg font-black tracking-[8px] text-slate-800 rounded-xl"
-                        maxLength={6}
-                      />
-                    </div>
-
-                    {profileError && (
-                      <div className="rounded-lg bg-red-50 p-3 text-xs text-red-600 border border-red-200 flex items-center gap-2">
-                        <Shield className="h-4 w-4 text-red-500 flex-shrink-0" />
-                        {profileError}
-                      </div>
-                    )}
-
-                    <Button
-                      type="button"
-                      onClick={handleProfileUpdate}
-                      disabled={profileLoading}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-11 text-sm shadow-md transition-all rounded-xl flex items-center justify-center gap-1.5"
-                    >
-                      <Save className="h-4 w-4" /> Verify OTP &amp; Save Profile
-                    </Button>
-
-                    {/* Resend OTP */}
-                    <div className="text-center mt-2">
-                      <button
-                        type="button"
-                        onClick={handleProfileResendOtp}
-                        disabled={profileRemainingAttempts <= 0}
-                        className={`text-[11px] font-bold inline-flex items-center gap-1 transition-all ${
-                          profileRemainingAttempts > 0
-                            ? "text-blue-600 hover:underline cursor-pointer"
-                            : "text-slate-400 cursor-not-allowed"
-                        }`}
-                      >
-                        <RefreshCw className="h-3 w-3" />
-                        Resend OTP {profileRemainingAttempts > 0 ? `(${profileRemainingAttempts} left)` : "(limit reached)"}
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           ) : null}
