@@ -75,8 +75,11 @@ function getGoogleDriveEmbedUrl(url: string): string {
   return cleanUrl;
 }
 
+import { useAuth } from "@/contexts/AuthContext";
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
+  const { logout } = useAuth();
   const [exams, setExams] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -1579,8 +1582,22 @@ const AdminDashboard = () => {
   };
 
   const handleLogout = () => {
+    const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+    const isExaminer = storedUser?.role === "examiner";
+
+    localStorage.removeItem("user");
     localStorage.removeItem("coreAdmin");
-    navigate("/coreadmin-login");
+    localStorage.removeItem("token");
+    localStorage.removeItem("jwt");
+    if (logout) {
+      logout();
+    }
+
+    if (isExaminer) {
+      navigate("/login");
+    } else {
+      navigate("/coreadmin-login");
+    }
   };
 
   const calculateTotalMarks = (questions: any[]) => {
