@@ -927,6 +927,20 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
                 <Input
                   type="number"
                   value={maxFullScreenExits}
+                  onChange={(e) => setMaxFullScreenExits(parseInt(e.target.value) || 3)}
+                  className="h-8 text-xs bg-white font-bold"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Card 4: Universal Questions Upload & Import (Excel & Google Docs) */}
+          <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl space-y-4 text-left">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/60 pb-3">
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                  <Upload className="h-4 w-4 text-blue-600" /> 4. Question Import & Upload Source (Excel / Google Docs)
+                </h3>
                 <p className="text-[10px] text-slate-500">Upload spreadsheet or link Google Docs document for {assessmentType.toUpperCase().replace("_", " ")}.</p>
               </div>
 
