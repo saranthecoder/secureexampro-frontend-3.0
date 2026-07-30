@@ -84,8 +84,9 @@ const AdminDashboard = () => {
     try {
       const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
       let url = `${BASE_URL}/exam/all`;
-      if (storedUser && storedUser.role === "examiner" && storedUser.email) {
-        url += `?createdBy=${encodeURIComponent(storedUser.email)}`;
+      const userIdentifier = storedUser?.email || storedUser?.username;
+      if (storedUser && storedUser.role === "examiner" && userIdentifier) {
+        url += `?createdBy=${encodeURIComponent(userIdentifier)}`;
       }
 
       const res = await fetch(url);
@@ -1764,7 +1765,10 @@ const AdminDashboard = () => {
       formData.append("duration", cloneDuration);
       formData.append("startTime", cloneStartTime ? new Date(cloneStartTime).toISOString() : "");
       formData.append("endTime", cloneEndTime ? new Date(cloneEndTime).toISOString() : "");
-      formData.append("adminEmail", "coreadmin@secureexam.com");
+      const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+      const creatorEmail = storedUser?.email || storedUser?.username || "coreadmin@secureexam.com";
+      formData.append("adminEmail", creatorEmail);
+      formData.append("createdBy", creatorEmail);
       formData.append("cameraMonitor", String(cloneCameraMonitor));
       formData.append("questions", JSON.stringify(cloningExam.questions));
 

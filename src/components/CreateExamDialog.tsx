@@ -580,7 +580,10 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
         endTime ? new Date(endTime).toISOString() : "",
       );
 
-      formData.append("adminEmail", "coreadmin@secureexam.com");
+      const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+      const creatorEmail = storedUser?.email || storedUser?.username || "coreadmin@secureexam.com";
+      formData.append("adminEmail", creatorEmail);
+      formData.append("createdBy", creatorEmail);
       if (file) {
         formData.append("file", file);
       } else if (assessmentType === "paper_code" || assessmentType === "coding_hybrid" || assessmentType === "online_coding") {
