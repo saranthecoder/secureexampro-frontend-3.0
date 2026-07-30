@@ -473,36 +473,113 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
 
   const handleImportGoogleDocs = async () => {
     if (!googleDocsUrl) {
-      toast({ title: "Google Docs Link Required", description: "Paste a shareable Google Docs link.", variant: "destructive" });
+      toast({ title: "Google Docs/Sheet Link Required", description: "Paste a shareable Google Docs or Google Sheet link.", variant: "destructive" });
       return;
     }
 
     try {
       setLoading(true);
-      const sampleDocQuestion = {
-        "Section": "Google Docs Import",
-        "Question Type": assessmentType === "online_coding" ? "CODING" : (assessmentType === "paper_code" ? "PAPER_CODE" : "MCQ"),
-        "Question": `Imported question from Google Doc (${googleDocsUrl.substring(0, 30)}...)`,
-        "Option A": "Option A",
-        "Option B": "Option B",
-        "Option C": "Option C",
-        "Option D": "Option D",
-        "Correct Answer": "A",
-        "Marks": 5,
-        "Negative Marks": 0
-      };
+      setParseError("");
 
-      const updated = [...parsedQuestions, sampleDocQuestion];
-      setParsedQuestions(updated);
-      setQuestionsCount(updated.length);
-      setTotalMarks(updated.reduce((s, q) => s + Number(q["Marks"] || q.marks || 1), 0));
+      let fetchUrl = googleDocsUrl.trim();
+
+      // Convert Google Sheets edit/view or pub link to CSV export URL
+      if (fetchUrl.includes("docs.google.com/spreadsheets")) {
+        if (fetchUrl.includes("/pub") || fetchUrl.includes("pubhtml")) {
+          if (!fetchUrl.includes("output=csv")) {
+            fetchUrl = fetchUrl + (fetchUrl.includes("?") ? "&" : "?") + "output=csv";
+          }
+        } else {
+          fetchUrl = fetchUrl.replace(/\/edit.*$/, "/export?format=csv")
+                             .replace(/\/view.*$/, "/export?format=csv");
+          if (!fetchUrl.includes("export?format=csv")) {
+            fetchUrl = fetchUrl.split("?")[0].replace(/\/$/, "") + "/export?format=csv";
+          }
+        }
+      }
+
+      const res = await fetch(fetchUrl);
+      if (!res.ok) {
+        throw new Error("Could not fetch Google Sheet. Make sure the Google Sheet is published to web or set to 'Anyone with the link can view'.");
+      }
+
+      const csvText = await res.text();
+      const XLSX = await import("xlsx");
+      const workbook = XLSX.read(csvText, { type: "string" });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rows: any[] = XLSX.utils.sheet_to_json(sheet);
+
+      if (!rows || rows.length === 0) {
+        throw new Error("No question rows found in the imported Google Sheet.");
+      }
+
+      if (assessmentType === "online_coding" || assessmentType === "paper_code" || assessmentType === "coding_hybrid") {
+        const parsedSetsMap: { [key: string]: any } = {};
+        rows.forEach((row, idx) => {
+          const setName = row["Set Name"] || row["Set"] || `Set ${String.fromCharCode(65 + idx)}`;
+          if (!parsedSetsMap[setName]) {
+            parsedSetsMap[setName] = {
+              setName,
+              title: row["Title"] || row["Problem Title"] || `${setName}: Coding Assessment Problem`,
+              marks: Number(row["Marks"] || 100),
+              paperMaxMarks: Number(row["Paper Logic Marks"] || 50),
+              executionMaxMarks: Number(row["Execution Output Marks"] || 50),
+              problemStatement: row["Problem Statement"] || row["Question"] || `Given target problem data, write an optimal solution.`,
+              sampleInputOutput: row["Sample Input Output"] || "Input:\nOutput:",
+              instructions: row["Instructions"] || "1. Write logic on paper.\n2. Execute code in IDE.",
+              testCases: [],
+              problems: [
+                {
+                  title: row["Title"] || "Problem 1",
+                  problemStatement: row["Problem Statement"] || row["Question"] || "Problem Statement",
+                  sampleInputOutput: row["Sample Input Output"] || "Input:\nOutput:",
+                  instructions: row["Instructions"] || "1. Write logic on paper."
+                }
+              ]
+            };
+          }
+
+          if (row["Test Case Input"] || row["Input"]) {
+            parsedSetsMap[setName].testCases.push({
+              input: String(row["Test Case Input"] || row["Input"] || ""),
+              expectedOutput: String(row["Expected Output"] || row["Output"] || ""),
+              explanation: String(row["Explanation"] || "Evaluation Test Case"),
+              isHidden: String(row["Is Hidden"] || "").toLowerCase() === "true" || row["Is Hidden"] === true || row["Is Hidden"] === 1,
+              weightage: Number(row["Weightage"] || 50)
+            });
+          }
+        });
+
+        const generatedSets = Object.values(parsedSetsMap);
+        if (generatedSets.length > 0) {
+          setQuestionSets(generatedSets);
+          setParsedQuestions(generatedSets);
+          setQuestionsCount(generatedSets.length);
+          const totalM = generatedSets.reduce((sum: number, s: any) => sum + (Number(s.marks) || 100), 0);
+          setTotalMarks(totalM);
+        } else {
+          setQuestionsCount(rows.length);
+          setParsedQuestions(rows);
+        }
+      } else {
+        // Standard MCQ / MSQ / FIB / NUM / DES
+        setQuestionsCount(rows.length);
+        setParsedQuestions(rows);
+        const marksSum = rows.reduce(
+          (sum, r) => sum + Number(r["Marks"] || r.marks || 1),
+          0,
+        );
+        setTotalMarks(marksSum);
+      }
 
       toast({
-        title: "Google Docs Import Successful",
-        description: "Linked and imported questions into pre-creation preview.",
+        title: "Google Sheet Imported Successfully",
+        description: `Parsed ${rows.length} questions from Google Sheet into preview.`,
       });
     } catch (err: any) {
       toast({ title: "Import Error", description: err.message, variant: "destructive" });
+      setParseError(err.message || "Failed to parse Google Sheet.");
     } finally {
       setLoading(false);
     }
@@ -1450,21 +1527,33 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
               </div>
 
               {/* PREVIEW ITEMS LIST */}
-              <div className="max-h-[320px] overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-100 text-xs">
+              <div className="max-h-[360px] overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 text-xs">
                 {parsedQuestions.map((q, idx) => {
                   const qType = String(q["Question Type"] || q["questionType"] || (assessmentType === "online_coding" ? "CODING" : "MCQ")).toUpperCase().trim();
                   const qText = q["Question"] || q["question"] || q["title"] || q["Problem Statement"] || `Question #${idx + 1}`;
                   const secName = q["Section"] || q["section"] || q["setName"] || "General";
                   const itemMarks = q["Marks"] || q["marks"] || 1;
+                  const negMarks = q["Negative Marks"] || q["negativeMarks"] || 0;
+
+                  const optA = q["Option A"] || q["optionA"] || q["OptionA"] || q["option a"] || (q.options ? q.options.A : "");
+                  const optB = q["Option B"] || q["optionB"] || q["OptionB"] || q["option b"] || (q.options ? q.options.B : "");
+                  const optC = q["Option C"] || q["optionC"] || q["OptionC"] || q["option c"] || (q.options ? q.options.C : "");
+                  const optD = q["Option D"] || q["optionD"] || q["OptionD"] || q["option d"] || (q.options ? q.options.D : "");
+
+                  const correctAns = String(q["Correct Answer"] || q["correctAnswer"] || "").trim();
+                  const correctLetters = correctAns.toUpperCase().split(/[\s,+/]+/).map(s => s.trim());
 
                   return (
-                    <div key={idx} className="p-3 hover:bg-slate-50 transition-colors space-y-2">
-                      <div className="flex items-center justify-between text-[10px]">
-                        <div className="flex items-center gap-1.5">
-                          <span className="bg-slate-200 text-slate-700 font-black px-2 py-0.5 rounded font-mono">#{idx + 1}</span>
-                          <span className="bg-blue-50 text-blue-700 font-extrabold px-2 py-0.5 rounded border border-blue-200">Section: {secName}</span>
-                          <span className="bg-emerald-50 text-emerald-700 font-extrabold px-2 py-0.5 rounded border border-emerald-200">{qType}</span>
-                          <span className="text-slate-500 font-bold">Marks: <strong>{itemMarks}</strong></span>
+                    <div key={idx} className="p-3.5 hover:bg-slate-50/80 transition-colors space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-1.5 text-[10px]">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="bg-slate-200 text-slate-800 font-black px-2 py-0.5 rounded font-mono">Q#{idx + 1}</span>
+                          <span className="bg-blue-50 text-blue-800 font-extrabold px-2 py-0.5 rounded border border-blue-200">Section: {secName}</span>
+                          <span className="bg-emerald-50 text-emerald-800 font-extrabold px-2 py-0.5 rounded border border-emerald-200">{qType}</span>
+                          <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 font-black px-2 py-0.5 rounded">+{itemMarks} Marks</span>
+                          {negMarks > 0 && (
+                            <span className="text-red-700 bg-red-50 border border-red-200 font-black px-2 py-0.5 rounded">-{negMarks} Neg</span>
+                          )}
                         </div>
 
                         <div className="flex items-center gap-1">
@@ -1489,9 +1578,57 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
                         </div>
                       </div>
 
-                      <div className="text-slate-800 font-semibold text-xs leading-relaxed line-clamp-2">
+                      <div className="text-slate-900 font-bold text-xs leading-relaxed">
                         {qText}
                       </div>
+
+                      {/* Options Grid */}
+                      {(optA || optB || optC || optD) && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1 pl-2 border-l-2 border-slate-200">
+                          {optA && (
+                            <div className={`p-2 rounded-lg border text-[11px] transition-all ${
+                              correctLetters.includes("A") || correctAns.toUpperCase() === String(optA).toUpperCase()
+                                ? "bg-emerald-50 border-emerald-300 text-emerald-950 font-bold shadow-xs"
+                                : "bg-slate-50 border-slate-200 text-slate-600"
+                            }`}>
+                              <span className="font-extrabold mr-1">A.</span> {optA}
+                            </div>
+                          )}
+                          {optB && (
+                            <div className={`p-2 rounded-lg border text-[11px] transition-all ${
+                              correctLetters.includes("B") || correctAns.toUpperCase() === String(optB).toUpperCase()
+                                ? "bg-emerald-50 border-emerald-300 text-emerald-950 font-bold shadow-xs"
+                                : "bg-slate-50 border-slate-200 text-slate-600"
+                            }`}>
+                              <span className="font-extrabold mr-1">B.</span> {optB}
+                            </div>
+                          )}
+                          {optC && (
+                            <div className={`p-2 rounded-lg border text-[11px] transition-all ${
+                              correctLetters.includes("C") || correctAns.toUpperCase() === String(optC).toUpperCase()
+                                ? "bg-emerald-50 border-emerald-300 text-emerald-950 font-bold shadow-xs"
+                                : "bg-slate-50 border-slate-200 text-slate-600"
+                            }`}>
+                              <span className="font-extrabold mr-1">C.</span> {optC}
+                            </div>
+                          )}
+                          {optD && (
+                            <div className={`p-2 rounded-lg border text-[11px] transition-all ${
+                              correctLetters.includes("D") || correctAns.toUpperCase() === String(optD).toUpperCase()
+                                ? "bg-emerald-50 border-emerald-300 text-emerald-950 font-bold shadow-xs"
+                                : "bg-slate-50 border-slate-200 text-slate-600"
+                            }`}>
+                              <span className="font-extrabold mr-1">D.</span> {optD}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {correctAns && (
+                        <div className="text-[10px] text-slate-500 font-bold pt-0.5">
+                          Correct Answer: <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-black">{correctAns}</span>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
