@@ -445,16 +445,28 @@ export const TrafficManagement: React.FC = () => {
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis dataKey="time" tick={{ fontSize: 11, fill: '#64748b' }} />
+                      <XAxis
+                        dataKey="timestamp"
+                        tickFormatter={(val) => {
+                          if (typeof val === "number") {
+                            return new Date(val).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                          }
+                          return String(val || "");
+                        }}
+                        tick={{ fontSize: 11, fill: '#64748b' }}
+                      />
                       <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
                       <RechartsTooltip
                         content={({ active, payload, label }) => {
                           if (active && payload && payload.length) {
+                            const formattedTime = typeof label === "number"
+                              ? new Date(label).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                              : String(label || "");
                             return (
                               <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl shadow-2xl text-xs font-sans text-white space-y-1.5 min-w-[200px] text-left">
                                 <div className="font-extrabold text-cyan-400 border-b border-slate-800 pb-1 flex items-center justify-between">
-                                  <span>Time: {label}</span>
-                                  <span className="text-[10px] text-slate-400">Telemetry Log</span>
+                                  <span>Time: {formattedTime}</span>
+                                  <span className="text-[10px] text-slate-400">Local Telemetry</span>
                                 </div>
                                 {payload.map((entry: any, index: number) => (
                                   <div key={index} className="flex items-center justify-between gap-4">
