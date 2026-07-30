@@ -19,6 +19,8 @@ export interface TrafficNode {
   cpuUsage?: number;
   memoryUsage?: number;
   weight?: number;
+  splitRatioPercent?: number;
+  activeCandidatesHandled?: number;
 }
 
 let trafficNodesCache: TrafficNode[] = [];
