@@ -552,27 +552,39 @@ export const TrafficManagement: React.FC = () => {
                   <Sliders className="h-5 w-5 text-indigo-600" /> Dynamic Lobby Policy Settings
                 </CardTitle>
                 <CardDescription className="text-xs text-slate-500">
-                  Configure traffic capacity limits and lobby triggers.
+                  Cluster max capacity is calculated automatically based on active servers & weights.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="pt-4">
+              <CardContent className="pt-3">
                 <form onSubmit={handleUpdateCapacityPolicy} className="space-y-4 text-left">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-bold text-slate-700">
-                      Max Candidate Capacity Threshold
-                    </Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={5000}
-                      value={maxCapacityInput}
-                      onChange={(e) => setMaxCapacityInput(Number(e.target.value))}
-                      required
-                      className="bg-white text-xs font-mono"
-                    />
-                    <p className="text-[10px] text-slate-400">
-                      Lobby activates automatically when candidate concurrency reaches this number.
-                    </p>
+                  {/* Auto-Calculated Server Cluster Capacity Display */}
+                  <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-white space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-300">Auto-Calculated Cluster Max Capacity</span>
+                      <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-mono font-black">
+                        {telemetry?.maxCapacity || (Math.max(1, servers.filter(s => s.isActive).length) * 50)} Candidates
+                      </Badge>
+                    </div>
+                    <div className="text-[11px] text-slate-400 space-y-1 font-sans border-t border-slate-800 pt-2">
+                      <div className="flex items-center justify-between">
+                        <span>Active Cluster Server Nodes:</span>
+                        <strong className="text-cyan-300">{servers.filter(s => s.isActive).length} Active Nodes</strong>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Base Node Capacity:</span>
+                        <strong className="text-white">50 Candidates / Node (Scaled by Weight)</strong>
+                      </div>
+                      <div className="flex items-center justify-between pt-0.5">
+                        <span>Auto Lobby Trigger Threshold:</span>
+                        <strong className="text-amber-400 font-mono">
+                          {lobbyModeInput === "force_enabled"
+                            ? "0 Candidates (Always Enabled)"
+                            : lobbyModeInput === "force_disabled"
+                            ? "Disabled (Direct Access)"
+                            : `${Math.floor((telemetry?.maxCapacity || (Math.max(1, servers.filter(s => s.isActive).length) * 50)) * 0.8)} Candidates (80% Load)`}
+                        </strong>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="space-y-1.5">
@@ -584,10 +596,13 @@ export const TrafficManagement: React.FC = () => {
                       onChange={(e) => setLobbyModeInput(e.target.value)}
                       className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="auto">Auto Dynamic (Lobby triggers on Capacity Spikes)</option>
+                      <option value="auto">Auto Dynamic (Lobby triggers automatically on Capacity Spikes)</option>
                       <option value="force_disabled">Force Lobby Off (Direct Access for All)</option>
                       <option value="force_enabled">Force Lobby On (Queue All Candidates)</option>
                     </select>
+                    <p className="text-[10px] text-slate-400">
+                      In Auto Dynamic mode, traffic controller automatically queues candidates when concurrency hits 80% capacity.
+                    </p>
                   </div>
 
                   <Button
@@ -596,7 +611,7 @@ export const TrafficManagement: React.FC = () => {
                     className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-10 rounded-xl shadow-md gap-2 mt-2"
                   >
                     <Check className="h-4 w-4" />
-                    {savingCapacity ? "Saving Policy..." : "Update Traffic Capacity Policy"}
+                    {savingCapacity ? "Saving Policy..." : "Update Lobby Waiting Mode Policy"}
                   </Button>
                 </form>
               </CardContent>
