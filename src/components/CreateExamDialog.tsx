@@ -524,8 +524,8 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
     const updated = [...parsedQuestions];
     updated[editingQuestionIndex] = {
       ...updated[editingQuestionIndex],
-      Question: editQuestionText,
-      question: editQuestionText,
+      Question: editingQuestionText,
+      question: editingQuestionText,
       Marks: editingQuestionMarks,
       marks: editingQuestionMarks,
       Section: editingQuestionSection,
