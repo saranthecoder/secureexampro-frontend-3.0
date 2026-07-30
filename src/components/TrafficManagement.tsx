@@ -460,14 +460,9 @@ export const TrafficManagement: React.FC = () => {
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                       <XAxis
-                        dataKey="timestamp"
-                        tickFormatter={(val) => {
-                          if (typeof val === "number") {
-                            return new Date(val).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                          }
-                          return String(val || "");
-                        }}
-                        tick={{ fontSize: 11, fill: '#64748b' }}
+                        dataKey="time"
+                        tick={{ fontSize: 10, fill: '#64748b' }}
+                        dy={4}
                       />
                       <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
                       <RechartsTooltip
