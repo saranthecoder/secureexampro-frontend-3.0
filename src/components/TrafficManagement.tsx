@@ -79,6 +79,20 @@ const POLICIES = [
   },
 ];
 
+const NODE_COLOR_PALETTE = [
+  { hex: "#0284c7", bg: "bg-sky-600", text: "text-sky-300", border: "border-sky-500/30", pillBg: "bg-sky-500/10" },
+  { hex: "#10b981", bg: "bg-emerald-500", text: "text-emerald-400", border: "border-emerald-500/30", pillBg: "bg-emerald-500/10" },
+  { hex: "#8b5cf6", bg: "bg-purple-600", text: "text-purple-400", border: "border-purple-500/30", pillBg: "bg-purple-500/10" },
+  { hex: "#f59e0b", bg: "bg-amber-500", text: "text-amber-400", border: "border-amber-500/30", pillBg: "bg-amber-500/10" },
+  { hex: "#ec4899", bg: "bg-pink-600", text: "text-pink-400", border: "border-pink-500/30", pillBg: "bg-pink-500/10" },
+  { hex: "#06b6d4", bg: "bg-cyan-500", text: "text-cyan-400", border: "border-cyan-500/30", pillBg: "bg-cyan-500/10" },
+];
+
+const getNodeColorStyle = (node: TrafficNode, idx: number) => {
+  if (node.isPrimary) return NODE_COLOR_PALETTE[0];
+  return NODE_COLOR_PALETTE[(idx % (NODE_COLOR_PALETTE.length - 1)) + 1];
+};
+
 export const TrafficManagement: React.FC = () => {
   const [servers, setServers] = useState<TrafficNode[]>([]);
   const [config, setConfig] = useState<{ policy: string; cpuThreshold: number; requestsPerPing: number }>({
@@ -497,7 +511,7 @@ export const TrafficManagement: React.FC = () => {
                         type="monotone"
                         dataKey="activeCandidates"
                         name="Total Cluster Traffic"
-                        stroke="#2563eb"
+                        stroke="#6366f1"
                         strokeWidth={2.5}
                         fillOpacity={1}
                         fill="url(#trafficGradient)"
@@ -505,16 +519,15 @@ export const TrafficManagement: React.FC = () => {
 
                       {/* Per-Server Individual Node Traffic Lines */}
                       {servers.map((srv, idx) => {
-                        const palette = ["#10b981", "#8b5cf6", "#f59e0b", "#ec4899", "#06b6d4", "#34d399"];
-                        const lineColor = srv.isPrimary ? "#0284c7" : palette[idx % palette.length];
+                        const style = getNodeColorStyle(srv, idx);
                         return (
                           <Area
                             key={srv._id || srv.name}
                             type="monotone"
                             dataKey={srv.name}
                             name={`${srv.name}${srv.isPrimary ? " (Primary Node)" : ""}`}
-                            stroke={lineColor}
-                            strokeWidth={2}
+                            stroke={style.hex}
+                            strokeWidth={2.5}
                             fillOpacity={0}
                           />
                         );
@@ -525,7 +538,8 @@ export const TrafficManagement: React.FC = () => {
                         type="monotone"
                         dataKey="queueDelaySeconds"
                         name="Dynamic Lobby Delay (s)"
-                        stroke="#f59e0b"
+                        stroke="#f97316"
+                        strokeDasharray="4 4"
                         strokeWidth={2}
                         fillOpacity={1}
                         fill="url(#delayGradient)"
@@ -536,9 +550,9 @@ export const TrafficManagement: React.FC = () => {
               </CardContent>
             </Card>
 
-            {/* TRAFFIC CAPACITY & LOBBY POLICY FORM */}
+            {/* DYNAMIC LOBBY CAPACITY POLICY CONTROL PANEL */}
             <Card className="border border-slate-200 shadow-sm bg-white rounded-2xl">
-              <CardHeader className="pb-3 border-b border-slate-100">
+              <CardHeader className="pb-2">
                 <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
                   <Sliders className="h-5 w-5 text-indigo-600" /> Dynamic Lobby Policy Settings
                 </CardTitle>
@@ -626,15 +640,14 @@ export const TrafficManagement: React.FC = () => {
               </div>
               <div className="h-4 w-full bg-slate-950 rounded-full overflow-hidden flex border border-slate-800 p-0.5">
                 {servers.map((srv, idx) => {
-                  const palette = ["bg-blue-600", "bg-emerald-500", "bg-purple-600", "bg-amber-500", "bg-pink-600", "bg-cyan-500"];
-                  const barColor = srv.isPrimary ? "bg-blue-600" : palette[idx % palette.length];
+                  const style = getNodeColorStyle(srv, idx);
                   const ratio = srv.splitRatioPercent !== undefined ? srv.splitRatioPercent : (srv.isActive ? Math.round(100 / Math.max(1, servers.filter(s => s.isActive).length)) : 0);
                   if (ratio === 0) return null;
                   return (
                     <div
                       key={srv._id || srv.name}
-                      style={{ width: `${ratio}%` }}
-                      className={`${barColor} h-full transition-all duration-500 first:rounded-l-full last:rounded-r-full flex items-center justify-center text-[9px] font-black text-white px-1 truncate`}
+                      style={{ width: `${ratio}%`, backgroundColor: style.hex }}
+                      className="h-full transition-all duration-500 first:rounded-l-full last:rounded-r-full flex items-center justify-center text-[9px] font-black text-white px-1 truncate shadow-inner"
                       title={`${srv.name}: ${ratio}% (${srv.activeCandidatesHandled || 0} candidates)`}
                     >
                       {ratio >= 10 ? `${srv.name} (${ratio}%)` : `${ratio}%`}
@@ -647,13 +660,12 @@ export const TrafficManagement: React.FC = () => {
             {/* Split Breakdown Pills */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
               {servers.map((srv, idx) => {
-                const palette = ["text-blue-400 border-blue-500/30 bg-blue-500/10", "text-emerald-400 border-emerald-500/30 bg-emerald-500/10", "text-purple-400 border-purple-500/30 bg-purple-500/10", "text-amber-400 border-amber-500/30 bg-amber-500/10"];
-                const colorStyle = srv.isPrimary ? "text-cyan-300 border-cyan-500/30 bg-cyan-500/10" : palette[idx % palette.length];
+                const style = getNodeColorStyle(srv, idx);
                 const ratio = srv.splitRatioPercent !== undefined ? srv.splitRatioPercent : (srv.isActive ? Math.round(100 / Math.max(1, servers.filter(s => s.isActive).length)) : 0);
                 const candidates = srv.activeCandidatesHandled !== undefined ? srv.activeCandidatesHandled : (srv.isActive ? Math.round((ratio / 100) * (telemetry?.currentActiveCandidates || 0)) : 0);
 
                 return (
-                  <div key={srv._id || srv.name} className={`p-3 rounded-xl border flex flex-col justify-between space-y-2 ${colorStyle}`}>
+                  <div key={srv._id || srv.name} className={`p-3 rounded-xl border flex flex-col justify-between space-y-2 ${style.text} ${style.border} ${style.pillBg}`}>
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-black truncate max-w-[120px]">{srv.name}</span>
                       <Badge className="bg-slate-950 text-white text-[9px] font-extrabold border border-slate-800">
