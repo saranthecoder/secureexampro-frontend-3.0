@@ -462,6 +462,20 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
   const getGoogleDocsEmbedUrl = (urlStr: string) => {
     if (!urlStr) return "";
     let clean = urlStr.trim();
+    if (clean.includes("docs.google.com/spreadsheets")) {
+      if (clean.includes("/pub") || clean.includes("pubhtml")) {
+        let htmlUrl = clean.replace("output=csv", "output=html");
+        if (htmlUrl.includes("/pub?") && !htmlUrl.includes("/pubhtml")) {
+          htmlUrl = htmlUrl.replace("/pub?", "/pubhtml?");
+        }
+        return htmlUrl;
+      }
+      clean = clean.replace(/\/edit(\?.*)?$/, "/preview").replace(/\/view(\?.*)?$/, "/preview");
+      if (!clean.includes("/preview") && !clean.includes("/pubhtml")) {
+        clean = clean.split("?")[0].replace(/\/$/, "") + "/preview";
+      }
+      return clean;
+    }
     if (clean.includes("docs.google.com/document/d/")) {
       clean = clean.replace(/\/edit(\?.*)?$/, "/preview").replace(/\/view(\?.*)?$/, "/preview");
       if (!clean.endsWith("/preview")) {
