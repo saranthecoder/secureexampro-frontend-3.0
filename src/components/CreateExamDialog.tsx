@@ -1416,76 +1416,72 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
             </div>
           )}
 
+          {/* INTERACTIVE PRE-CREATION QUESTION PREVIEW SECTION */}
           {parsedQuestions.length > 0 && (
-            <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-2 text-left">
-              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">Parsed Questions Preview</div>
-              <div className="max-h-[300px] overflow-y-auto border border-slate-100 rounded-lg divide-y divide-slate-100 text-xs">
+            <div className="p-4 bg-white border border-slate-200/90 rounded-2xl space-y-3 text-left shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <FileCheck className="h-5 w-5 text-blue-600" />
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                      Interactive Question & Set Preview (Before Creation)
+                    </h3>
+                    <p className="text-[10px] text-slate-500">Inspect, edit, or remove questions before publishing the assessment.</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-extrabold bg-blue-50 text-blue-800 border border-blue-200 px-2.5 py-1 rounded-lg">
+                    Parsed Items: {parsedQuestions.length}
+                  </span>
+                  <span className="text-[11px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-lg">
+                    Total Marks: {totalMarks}
+                  </span>
+                </div>
+              </div>
+
+              {/* PREVIEW ITEMS LIST */}
+              <div className="max-h-[320px] overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-100 text-xs">
                 {parsedQuestions.map((q, idx) => {
-                  const qType = String(q["Question Type"] || q["questionType"] || "MCQ").toUpperCase().trim();
-                  const isMcqMsq = qType === "MCQ" || qType === "MSQ";
-                  const optA = q["Option A"] || q["optionA"] || q["OptionA"] || q["option a"];
-                  const optB = q["Option B"] || q["optionB"] || q["OptionB"] || q["option b"];
-                  const optC = q["Option C"] || q["optionC"] || q["OptionC"] || q["option c"];
-                  const optD = q["Option D"] || q["optionD"] || q["OptionD"] || q["option d"];
-                  const correctAns = String(q["Correct Answer"] || q["correctAnswer"] || "").toUpperCase().trim();
-                  const correctLetters = correctAns.split(/[\s,+/]+/).map(s => s.trim());
-                  const negMarks = q["Negative Marks"] || q["negativeMarks"] || 0;
+                  const qType = String(q["Question Type"] || q["questionType"] || (assessmentType === "online_coding" ? "CODING" : "MCQ")).toUpperCase().trim();
+                  const qText = q["Question"] || q["question"] || q["title"] || q["Problem Statement"] || `Question #${idx + 1}`;
+                  const secName = q["Section"] || q["section"] || q["setName"] || "General";
+                  const itemMarks = q["Marks"] || q["marks"] || 1;
 
                   return (
-                    <div key={idx} className="p-3 hover:bg-slate-50 transition-colors">
-                      <div className="flex items-center gap-1.5 mb-1.5 text-[10px]">
-                        <span className="bg-slate-100 text-slate-600 font-extrabold px-1.5 py-0.5 rounded font-mono">Q{idx + 1}</span>
-                        <span className="bg-blue-50 text-blue-700 font-extrabold px-1.5 py-0.5 rounded uppercase">Section: {q["Section"] || q["section"] || "General"}</span>
-                        <span className="bg-emerald-50 text-emerald-700 font-extrabold px-1.5 py-0.5 rounded uppercase">{qType}</span>
-                        <span className="text-slate-400 font-extrabold ml-auto">
-                          Marks: {q["Marks"] || q["marks"] || 1} | Negative Marks: -{negMarks}
-                        </span>
-                      </div>
-                      <div className="text-slate-800 font-semibold mb-2">{q["Question"] || q["question"]}</div>
-
-                      {isMcqMsq && (
-                        <div className="grid grid-cols-2 gap-2 mt-1.5 mb-2 pl-3 border-l-2 border-slate-150">
-                          {optA && (
-                            <div className={`p-1.5 rounded-lg border text-[10px] transition-all ${
-                              correctLetters.includes("A")
-                                ? "bg-emerald-50/70 border-emerald-250 text-emerald-950 font-bold"
-                                : "bg-slate-50 border-slate-100 text-slate-500"
-                            }`}>
-                              <span className="font-extrabold mr-1">A.</span> {optA}
-                            </div>
-                          )}
-                          {optB && (
-                            <div className={`p-1.5 rounded-lg border text-[10px] transition-all ${
-                              correctLetters.includes("B")
-                                ? "bg-emerald-50/70 border-emerald-250 text-emerald-950 font-bold"
-                                : "bg-slate-50 border-slate-100 text-slate-500"
-                            }`}>
-                              <span className="font-extrabold mr-1">B.</span> {optB}
-                            </div>
-                          )}
-                          {optC && (
-                            <div className={`p-1.5 rounded-lg border text-[10px] transition-all ${
-                              correctLetters.includes("C")
-                                ? "bg-emerald-50/70 border-emerald-250 text-emerald-950 font-bold"
-                                : "bg-slate-50 border-slate-100 text-slate-500"
-                            }`}>
-                              <span className="font-extrabold mr-1">C.</span> {optC}
-                            </div>
-                          )}
-                          {optD && (
-                            <div className={`p-1.5 rounded-lg border text-[10px] transition-all ${
-                              correctLetters.includes("D")
-                                ? "bg-emerald-50/70 border-emerald-250 text-emerald-950 font-bold"
-                                : "bg-slate-50 border-slate-100 text-slate-500"
-                            }`}>
-                              <span className="font-extrabold mr-1">D.</span> {optD}
-                            </div>
-                          )}
+                    <div key={idx} className="p-3 hover:bg-slate-50 transition-colors space-y-2">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <div className="flex items-center gap-1.5">
+                          <span className="bg-slate-200 text-slate-700 font-black px-2 py-0.5 rounded font-mono">#{idx + 1}</span>
+                          <span className="bg-blue-50 text-blue-700 font-extrabold px-2 py-0.5 rounded border border-blue-200">Section: {secName}</span>
+                          <span className="bg-emerald-50 text-emerald-700 font-extrabold px-2 py-0.5 rounded border border-emerald-200">{qType}</span>
+                          <span className="text-slate-500 font-bold">Marks: <strong>{itemMarks}</strong></span>
                         </div>
-                      )}
 
-                      <div className="text-[10px] text-slate-500 font-bold">
-                        Correct Answer: <span className="text-blue-600 font-black">{correctAns}</span>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleOpenEditQuestionModal(q, idx)}
+                            className="h-7 text-[10px] font-extrabold text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2"
+                          >
+                            <Edit3 className="h-3 w-3 mr-1" /> Edit
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteParsedQuestion(idx)}
+                            className="h-7 text-[10px] font-extrabold text-red-600 hover:text-red-700 hover:bg-red-50 px-2"
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" /> Delete
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="text-slate-800 font-semibold text-xs leading-relaxed line-clamp-2">
+                        {qText}
                       </div>
                     </div>
                   );
@@ -1501,21 +1497,61 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
             </div>
           )}
 
-          {questionsCount > 0 && (
-            <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 p-3 rounded-lg border border-emerald-200">
-              <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />
-              <span>Verified spreadsheet: {questionsCount} questions • Total {totalMarks} marks.</span>
-            </div>
-          )}
-
           <Button
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold h-11 text-sm shadow-md transition-all rounded-xl"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold h-11 text-sm shadow-md transition-all rounded-xl mt-2"
             onClick={handleCreate}
             disabled={loading}
           >
             <Upload className="mr-1.5 h-4 w-4" />
             {loading ? "Registering Assessment..." : "Publish Exam"}
           </Button>
+
+          {/* INLINE EDIT QUESTION MODAL */}
+          <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+            <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
+                  <Edit3 className="h-4 w-4 text-blue-400" /> Edit Question Details
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3 pt-2 text-left">
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-300 font-semibold">Section Name</Label>
+                  <Input
+                    value={editingQuestionSection}
+                    onChange={(e) => setEditQuestionSection(e.target.value)}
+                    className="bg-slate-800 border-slate-700 text-white text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-300 font-semibold">Question Text / Title</Label>
+                  <textarea
+                    value={editingQuestionText}
+                    onChange={(e) => setEditQuestionText(e.target.value)}
+                    rows={3}
+                    className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs font-sans focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-300 font-semibold">Marks Awarded</Label>
+                  <Input
+                    type="number"
+                    value={editingQuestionMarks}
+                    onChange={(e) => setEditQuestionMarks(Number(e.target.value))}
+                    className="bg-slate-800 border-slate-700 text-white text-xs"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button type="button" variant="ghost" onClick={() => setIsEditModalOpen(false)} className="text-xs font-bold text-slate-400 hover:text-white">
+                    Cancel
+                  </Button>
+                  <Button type="button" onClick={handleSaveEditedQuestion} className="bg-blue-600 hover:bg-blue-500 text-xs font-bold px-4">
+                    Save Question Changes
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </DialogContent>
     </Dialog>
