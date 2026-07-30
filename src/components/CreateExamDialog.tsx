@@ -631,10 +631,10 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
       return;
     }
 
-    if (assessmentType === "standard" && !file) {
+    if (assessmentType === "standard" && !file && parsedQuestions.length === 0) {
       toast({
-        title: "Excel File Required",
-        description: "Upload an Excel file containing questions for standard MCQ assessments.",
+        title: "Question Source Required",
+        description: "Upload an Excel file or import a Google Sheet containing questions.",
         variant: "destructive",
       });
       return;
@@ -663,6 +663,9 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
       formData.append("createdBy", creatorEmail);
       if (file) {
         formData.append("file", file);
+      }
+      if (parsedQuestions && parsedQuestions.length > 0) {
+        formData.append("questions", JSON.stringify(parsedQuestions));
       } else if (assessmentType === "paper_code" || assessmentType === "coding_hybrid" || assessmentType === "online_coding") {
         const dummyBlob = new Blob(["Section,Question Type,Question,Correct Answer,Marks\nCoding,CODING,Coding Question Set,N/A,100"], { type: "text/csv" });
         formData.append("file", dummyBlob, "coding_questions.csv");
