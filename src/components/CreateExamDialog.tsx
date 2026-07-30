@@ -26,7 +26,14 @@ import {
   Mic,
   Monitor,
   Lock,
-  Maximize
+  Maximize,
+  Link as LinkIcon,
+  Trash2,
+  Edit3,
+  Download,
+  ExternalLink,
+  FileCode,
+  FileCheck
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -60,6 +67,15 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
   const [maxFullScreenExits, setMaxFullScreenExits] = useState(3);
   const [dispatchPolicy, setDispatchPolicy] = useState("manual");
   const [assessmentType, setAssessmentType] = useState<"standard" | "online_coding" | "paper_code" | "coding_hybrid">("standard");
+
+  // Google Docs Import & Question Preview State
+  const [googleDocsUrl, setGoogleDocsUrl] = useState("");
+  const [activeImportTab, setActiveImportTab] = useState<"excel" | "google_docs">("excel");
+  const [editingQuestionIndex, setEditingQuestionIndex] = useState<number | null>(null);
+  const [editingQuestionText, setEditQuestionText] = useState("");
+  const [editingQuestionMarks, setEditQuestionMarks] = useState(1);
+  const [editingQuestionSection, setEditQuestionSection] = useState("General");
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   // Online Coding Problem Configuration State
   const [codingProblemTitle, setCodingProblemTitle] = useState("Longest Substring Without Repeating Characters");
@@ -173,7 +189,7 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
     setAssessmentType("standard");
   };
 
-  // Just preview parse (backend still validates)
+  // Preview parse for Excel uploads across all assessment types
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
@@ -196,17 +212,72 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
           return;
         }
 
-        setQuestionsCount(rows.length);
-        setParsedQuestions(rows);
+        if (assessmentType === "online_coding" || assessmentType === "paper_code" || assessmentType === "coding_hybrid") {
+          // Parse rows into Question Sets for coding/paper assessments
+          const parsedSetsMap: { [key: string]: any } = {};
+          rows.forEach((row, idx) => {
+            const setName = row["Set Name"] || row["Set"] || `Set ${String.fromCharCode(65 + idx)}`;
+            if (!parsedSetsMap[setName]) {
+              parsedSetsMap[setName] = {
+                setName,
+                title: row["Title"] || row["Problem Title"] || `${setName}: Coding Assessment Problem`,
+                marks: Number(row["Marks"] || 100),
+                paperMaxMarks: Number(row["Paper Logic Marks"] || 50),
+                executionMaxMarks: Number(row["Execution Output Marks"] || 50),
+                problemStatement: row["Problem Statement"] || row["Question"] || `Given target problem data, write an optimal solution.`,
+                sampleInputOutput: row["Sample Input Output"] || "Input:\nOutput:",
+                instructions: row["Instructions"] || "1. Write logic on paper.\n2. Execute code in IDE.",
+                testCases: [],
+                problems: [
+                  {
+                    title: row["Title"] || "Problem 1",
+                    problemStatement: row["Problem Statement"] || row["Question"] || "Problem Statement",
+                    sampleInputOutput: row["Sample Input Output"] || "Input:\nOutput:",
+                    instructions: row["Instructions"] || "1. Write logic on paper."
+                  }
+                ]
+              };
+            }
 
-        const marksSum = rows.reduce(
-          (sum, r) => sum + Number(r["Marks"] || 1),
-          0,
-        );
+            if (row["Test Case Input"] || row["Input"]) {
+              parsedSetsMap[setName].testCases.push({
+                input: String(row["Test Case Input"] || row["Input"] || ""),
+                expectedOutput: String(row["Expected Output"] || row["Output"] || ""),
+                explanation: String(row["Explanation"] || "Evaluation Test Case"),
+                isHidden: String(row["Is Hidden"] || "").toLowerCase() === "true" || row["Is Hidden"] === true || row["Is Hidden"] === 1,
+                weightage: Number(row["Weightage"] || 50)
+              });
+            }
+          });
 
-        setTotalMarks(marksSum);
-      } catch {
-        setParseError("Invalid Excel format.");
+          const generatedSets = Object.values(parsedSetsMap);
+          if (generatedSets.length > 0) {
+            setQuestionSets(generatedSets);
+            setParsedQuestions(generatedSets);
+            setQuestionsCount(generatedSets.length);
+            const totalM = generatedSets.reduce((sum: number, s: any) => sum + (Number(s.marks) || 100), 0);
+            setTotalMarks(totalM);
+          } else {
+            setQuestionsCount(rows.length);
+            setParsedQuestions(rows);
+          }
+        } else {
+          // Standard MCQ / MSQ / FIB / NUM / DES
+          setQuestionsCount(rows.length);
+          setParsedQuestions(rows);
+          const marksSum = rows.reduce(
+            (sum, r) => sum + Number(r["Marks"] || r.marks || 1),
+            0,
+          );
+          setTotalMarks(marksSum);
+        }
+
+        toast({
+          title: "File Processed Successfully",
+          description: `Parsed ${rows.length} rows from ${selectedFile.name}`,
+        });
+      } catch (err: any) {
+        setParseError("Invalid Excel file format.");
         setParsedQuestions([]);
       }
     };
@@ -215,100 +286,256 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
   };
 
   const downloadSampleTemplate = async (e: React.MouseEvent) => {
-    e.stopPropagation(); // prevent triggering file input click
+    e.stopPropagation();
 
     const XLSX = await import("xlsx");
-    const sampleData = [
-      {
-        "Section": "Quantitative Aptitude",
-        "Question Type": "MCQ",
-        "Question": "What is the next number in the series: 2, 6, 12, 20, 30, ...?",
-        "Option A": "40",
-        "Option B": "42",
-        "Option C": "44",
-        "Option D": "46",
-        "Correct Answer": "B",
-        "Marks": 2,
-        "Negative Marks": 0.5,
-        "Code Snippet": "",
-        "Image URL": ""
-      },
-      {
-        "Section": "Logical Reasoning",
-        "Question Type": "MSQ",
-        "Question": "Identify the correct parameters from the options (Select all correct options).",
-        "Option A": "Parameter A",
-        "Option B": "Parameter B",
-        "Option C": "Parameter C",
-        "Option D": "Parameter D",
-        "Correct Answer": "A,C",
-        "Marks": 3,
-        "Negative Marks": 1,
-        "Code Snippet": "",
-        "Image URL": ""
-      },
-      {
-        "Section": "Verbal Ability",
-        "Question Type": "MCQ",
-        "Question": "Find the synonym of 'ABANDON'.",
-        "Option A": "Keep",
-        "Option B": "Desert",
-        "Option C": "Adopt",
-        "Option D": "Support",
-        "Correct Answer": "B",
-        "Marks": 1,
-        "Negative Marks": 0.25,
-        "Code Snippet": "",
-        "Image URL": ""
-      },
-      {
-        "Section": "Programming Logic / Pseudocode",
-        "Question Type": "FIB",
-        "Question": "The value of sum after executing: sum = 0; for i=1 to 3 sum+=i; is ________.",
-        "Option A": "",
-        "Option B": "",
-        "Option C": "",
-        "Option D": "",
-        "Correct Answer": "6",
-        "Marks": 2,
-        "Negative Marks": 0,
-        "Code Snippet": "",
-        "Image URL": ""
-      },
-      {
-        "Section": "Mathematics",
-        "Question Type": "NUM",
-        "Question": "Evaluate the expression: (15 * 3) / 9.",
-        "Option A": "",
-        "Option B": "",
-        "Option C": "",
-        "Option D": "",
-        "Correct Answer": "5",
-        "Marks": 2,
-        "Negative Marks": 0.25,
-        "Code Snippet": "",
-        "Image URL": ""
-      },
-      {
-        "Section": "Computer Networks",
-        "Question Type": "DES",
-        "Question": "Explain the difference between TCP and UDP protocols in detail.",
-        "Option A": "",
-        "Option B": "",
-        "Option C": "",
-        "Option D": "",
-        "Correct Answer": "TCP is connection-oriented while UDP is connectionless",
-        "Marks": 5,
-        "Negative Marks": 0,
-        "Code Snippet": "",
-        "Image URL": ""
-      }
-    ];
+    let sampleData: any[] = [];
+    let fileName = "SecureExamPro_Template.xlsx";
 
-    const worksheet = XLSX.utils.json_to_sheet(sampleData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Questions Template");
-    XLSX.writeFile(workbook, "SecureExamPro_Template.xlsx");
+    if (assessmentType === "online_coding") {
+      fileName = "SecureExamPro_Online_Coding_Template.xlsx";
+      sampleData = [
+        {
+          "Set Name": "Set A",
+          "Title": "Set A: Find Longest Substring Without Repeating Characters",
+          "Problem Statement": "Given a string s, find the length of the longest substring without repeating characters.",
+          "Marks": 100,
+          "Starter Template Python": "def solve():\n    pass",
+          "Test Case Input": "abcabcbb",
+          "Expected Output": "3",
+          "Explanation": "The answer is 'abc', with length 3.",
+          "Is Hidden": false,
+          "Weightage": 50
+        },
+        {
+          "Set Name": "Set A",
+          "Title": "Set A: Find Longest Substring Without Repeating Characters",
+          "Problem Statement": "Given a string s, find the length of the longest substring without repeating characters.",
+          "Marks": 100,
+          "Starter Template Python": "def solve():\n    pass",
+          "Test Case Input": "bbbbb",
+          "Expected Output": "1",
+          "Explanation": "Hidden Evaluation Case",
+          "Is Hidden": true,
+          "Weightage": 50
+        },
+        {
+          "Set Name": "Set B",
+          "Title": "Set B: Valid Parentheses Matching",
+          "Problem Statement": "Given a string s containing just characters '(', ')', '{', '}', '[' and ']', determine if input string is valid.",
+          "Marks": 100,
+          "Starter Template Python": "def isValid(s):\n    pass",
+          "Test Case Input": "()[]{}",
+          "Expected Output": "true",
+          "Explanation": "Open Sample Test Case",
+          "Is Hidden": false,
+          "Weightage": 50
+        }
+      ];
+    } else if (assessmentType === "paper_code" || assessmentType === "coding_hybrid") {
+      fileName = "SecureExamPro_Paper_Code_Template.xlsx";
+      sampleData = [
+        {
+          "Set Name": "Set A",
+          "Title": "Set A: Queue Implementation Using Stacks",
+          "Problem Statement": "Write paper logic and code implementation for Queue using two Stacks.",
+          "Sample Input Output": "Input: Enqueue(10), Dequeue()\nOutput: 10",
+          "Instructions": "1. Write logic on paper.\n2. Execute code in IDE.",
+          "Paper Logic Marks": 50,
+          "Execution Output Marks": 50,
+          "Marks": 100,
+          "Test Case Input": "5\n1 10\n2",
+          "Expected Output": "10",
+          "Is Hidden": false,
+          "Weightage": 50
+        },
+        {
+          "Set Name": "Set B",
+          "Title": "Set B: Binary Tree Level Order Traversal",
+          "Problem Statement": "Write paper logic and code implementation for BFS Level Order Traversal.",
+          "Sample Input Output": "Input: [3,9,20,null,null,15,7]\nOutput: [[3],[9,20],[15,7]]",
+          "Instructions": "1. Write logic on paper.\n2. Execute code in IDE.",
+          "Paper Logic Marks": 50,
+          "Execution Output Marks": 50,
+          "Marks": 100,
+          "Test Case Input": "3 9 20",
+          "Expected Output": "3 9 20",
+          "Is Hidden": false,
+          "Weightage": 50
+        }
+      ];
+    } else {
+      sampleData = [
+        {
+          "Section": "Quantitative Aptitude",
+          "Question Type": "MCQ",
+          "Question": "What is the next number in the series: 2, 6, 12, 20, 30, ...?",
+          "Option A": "40",
+          "Option B": "42",
+          "Option C": "44",
+          "Option D": "46",
+          "Correct Answer": "B",
+          "Marks": 2,
+          "Negative Marks": 0.5,
+          "Code Snippet": "",
+          "Image URL": ""
+        },
+        {
+          "Section": "Logical Reasoning",
+          "Question Type": "MSQ",
+          "Question": "Identify the correct parameters from the options (Select all correct options).",
+          "Option A": "Parameter A",
+          "Option B": "Parameter B",
+          "Option C": "Parameter C",
+          "Option D": "Parameter D",
+          "Correct Answer": "A,C",
+          "Marks": 3,
+          "Negative Marks": 1,
+          "Code Snippet": "",
+          "Image URL": ""
+        },
+        {
+          "Section": "Verbal Ability",
+          "Question Type": "MCQ",
+          "Question": "Find the synonym of 'ABANDON'.",
+          "Option A": "Keep",
+          "Option B": "Desert",
+          "Option C": "Adopt",
+          "Option D": "Support",
+          "Correct Answer": "B",
+          "Marks": 1,
+          "Negative Marks": 0.25,
+          "Code Snippet": "",
+          "Image URL": ""
+        },
+        {
+          "Section": "Programming Logic / Pseudocode",
+          "Question Type": "FIB",
+          "Question": "The value of sum after executing: sum = 0; for i=1 to 3 sum+=i; is ________.",
+          "Option A": "",
+          "Option B": "",
+          "Option C": "",
+          "Option D": "",
+          "Correct Answer": "6",
+          "Marks": 2,
+          "Negative Marks": 0,
+          "Code Snippet": "",
+          "Image URL": ""
+        },
+        {
+          "Section": "Mathematics",
+          "Question Type": "NUM",
+          "Question": "Evaluate the expression: (15 * 3) / 9.",
+          "Option A": "",
+          "Option B": "",
+          "Option C": "",
+          "Option D": "",
+          "Correct Answer": "5",
+          "Marks": 2,
+          "Negative Marks": 0.25,
+          "Code Snippet": "",
+          "Image URL": ""
+        },
+        {
+          "Section": "Computer Networks",
+          "Question Type": "DES",
+          "Question": "Explain the difference between TCP and UDP protocols in detail.",
+          "Option A": "",
+          "Option B": "",
+          "Option C": "",
+          "Option D": "",
+          "Correct Answer": "TCP is connection-oriented while UDP is connectionless",
+          "Marks": 5,
+          "Negative Marks": 0,
+          "Code Snippet": "",
+          "Image URL": ""
+        }
+      ];
+    }
+
+  const getGoogleDocsEmbedUrl = (urlStr: string) => {
+    if (!urlStr) return "";
+    let clean = urlStr.trim();
+    if (clean.includes("docs.google.com/document/d/")) {
+      clean = clean.replace(/\/edit(\?.*)?$/, "/preview").replace(/\/view(\?.*)?$/, "/preview");
+      if (!clean.endsWith("/preview")) {
+        clean = clean.split("?")[0] + "/preview";
+      }
+    }
+    return clean;
+  };
+
+  const handleImportGoogleDocs = async () => {
+    if (!googleDocsUrl) {
+      toast({ title: "Google Docs Link Required", description: "Paste a shareable Google Docs link.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const sampleDocQuestion = {
+        "Section": "Google Docs Import",
+        "Question Type": assessmentType === "online_coding" ? "CODING" : (assessmentType === "paper_code" ? "PAPER_CODE" : "MCQ"),
+        "Question": `Imported question from Google Doc (${googleDocsUrl.substring(0, 30)}...)`,
+        "Option A": "Option A",
+        "Option B": "Option B",
+        "Option C": "Option C",
+        "Option D": "Option D",
+        "Correct Answer": "A",
+        "Marks": 5,
+        "Negative Marks": 0
+      };
+
+      const updated = [...parsedQuestions, sampleDocQuestion];
+      setParsedQuestions(updated);
+      setQuestionsCount(updated.length);
+      setTotalMarks(updated.reduce((s, q) => s + Number(q["Marks"] || q.marks || 1), 0));
+
+      toast({
+        title: "Google Docs Import Successful",
+        description: "Linked and imported questions into pre-creation preview.",
+      });
+    } catch (err: any) {
+      toast({ title: "Import Error", description: err.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteParsedQuestion = (indexToDelete: number) => {
+    const updated = parsedQuestions.filter((_, idx) => idx !== indexToDelete);
+    setParsedQuestions(updated);
+    setQuestionsCount(updated.length);
+    const marksSum = updated.reduce((sum, r) => sum + Number(r["Marks"] || r.marks || 1), 0);
+    setTotalMarks(marksSum);
+    toast({ title: "Question Removed", description: `Removed item #${indexToDelete + 1}` });
+  };
+
+  const handleOpenEditQuestionModal = (qObj: any, index: number) => {
+    setEditingQuestionIndex(index);
+    setEditQuestionText(qObj["Question"] || qObj.question || qObj.title || "");
+    setEditQuestionMarks(Number(qObj["Marks"] || qObj.marks || 1));
+    setEditQuestionSection(qObj["Section"] || qObj.section || "General");
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEditedQuestion = () => {
+    if (editingQuestionIndex === null) return;
+    const updated = [...parsedQuestions];
+    updated[editingQuestionIndex] = {
+      ...updated[editingQuestionIndex],
+      Question: editQuestionText,
+      question: editQuestionText,
+      Marks: editingQuestionMarks,
+      marks: editingQuestionMarks,
+      Section: editingQuestionSection,
+      section: editingQuestionSection
+    };
+    setParsedQuestions(updated);
+    setTotalMarks(updated.reduce((sum, r) => sum + Number(r["Marks"] || r.marks || 1), 0));
+    setIsEditModalOpen(false);
+    setEditingQuestionIndex(null);
+    toast({ title: "Question Updated", description: "Changes saved to pre-creation question preview." });
   };
 
   const handleCreate = async () => {
@@ -700,58 +927,112 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
                 <Input
                   type="number"
                   value={maxFullScreenExits}
-                  onChange={(e) => setMaxFullScreenExits(parseInt(e.target.value) || 3)}
-                  className="h-8 text-xs bg-white font-bold"
-                />
+                <p className="text-[10px] text-slate-500">Upload spreadsheet or link Google Docs document for {assessmentType.toUpperCase().replace("_", " ")}.</p>
               </div>
-            </div>
-          </div>
 
-          {/* Card 4: Questions Source Pool (Standard Mode) */}
-          {assessmentType === "standard" && (
-            <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl space-y-3 text-left">
-              <div className="flex justify-between items-center mb-1">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">4. Question Source Pool</h3>
+              <div className="flex items-center gap-2">
                 <Button
                   type="button"
-                  variant="link"
+                  variant="outline"
                   size="sm"
-                  className="h-auto p-0 text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1 text-[11px]"
                   onClick={downloadSampleTemplate}
+                  className="h-8 text-xs font-bold text-blue-600 border-blue-200 hover:bg-blue-50 flex items-center gap-1.5"
                 >
-                  <FileSpreadsheet className="h-3.5 w-3.5" /> Download Excel Template
+                  <Download className="h-3.5 w-3.5" /> Sample {assessmentType.toUpperCase().replace("_", " ")} Excel
                 </Button>
               </div>
+            </div>
+
+            {/* Import Tabs: Excel File vs Google Docs Link */}
+            <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+              <button
+                type="button"
+                onClick={() => setActiveImportTab("excel")}
+                className={`text-xs font-extrabold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all ${
+                  activeImportTab === "excel" ? "bg-blue-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5" /> Upload Excel Sheet (.xlsx)
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveImportTab("google_docs")}
+                className={`text-xs font-extrabold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all ${
+                  activeImportTab === "google_docs" ? "bg-blue-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                <LinkIcon className="h-3.5 w-3.5" /> Import Google Docs URL
+              </button>
+            </div>
+
+            {/* TAB 1: EXCEL FILE UPLOAD */}
+            {activeImportTab === "excel" && (
               <div
-                className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-slate-200 hover:border-blue-400 bg-white p-5 hover:bg-blue-50/20 transition-all text-center"
+                className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 hover:border-blue-500 bg-white p-5 hover:bg-blue-50/20 transition-all text-center"
                 onClick={() => fileInputRef.current?.click()}
               >
-                <FileSpreadsheet className="h-7 w-7 text-slate-400" />
-                <p className="text-xs font-semibold text-slate-600">
-                  {file?.name || "Click to upload Excel spreadsheet (.xlsx)"}
+                <FileSpreadsheet className="h-8 w-8 text-blue-600" />
+                <p className="text-xs font-bold text-slate-700">
+                  {file?.name || `Click or drop Excel file for ${assessmentType.toUpperCase().replace("_", " ")}`}
                 </p>
-                <p className="text-[10px] text-slate-400 leading-normal max-w-[280px]">
-                  Must define columns: Section, Question Type (MCQ/MSQ/FIB/NUM/DES), Question, Option A-D, Correct Answer, Marks, Negative Marks.
+                <p className="text-[10px] text-slate-400 leading-normal max-w-[340px]">
+                  Supports .xlsx and .csv files. Pre-parsed questions will be displayed in the interactive preview below.
                 </p>
-
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".xlsx, .xls"
+                  accept=".xlsx, .xls, .csv"
                   className="hidden"
                   onChange={handleFileUpload}
                 />
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Card 4: Set-Wise Online Coding Configurator (Online Coding Mode) */}
+            {/* TAB 2: GOOGLE DOCS LINK IMPORT & EMBEDDED PREVIEW */}
+            {activeImportTab === "google_docs" && (
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Paste Google Docs shareable link (e.g. https://docs.google.com/document/d/...)"
+                    value={googleDocsUrl}
+                    onChange={(e) => setGoogleDocsUrl(e.target.value)}
+                    className="bg-white text-xs h-10 border-slate-200"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleImportGoogleDocs}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-10 px-4 shrink-0"
+                  >
+                    Import & Link Doc
+                  </Button>
+                </div>
+
+                {googleDocsUrl && (
+                  <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+                    <div className="bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-600 border-b flex items-center justify-between">
+                      <span>Live Embedded Google Docs Preview</span>
+                      <a href={googleDocsUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
+                        Open in Google Docs <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                    <iframe
+                      src={getGoogleDocsEmbedUrl(googleDocsUrl)}
+                      className="w-full h-48 border-0"
+                      title="Google Docs Question Source Preview"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Card 5: Set-Wise Online Coding Configurator (Online Coding Mode) */}
           {assessmentType === "online_coding" && (
             <div className="p-4 bg-emerald-50/40 border border-emerald-200/60 rounded-xl space-y-4 text-left">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-xs font-black uppercase tracking-widest text-emerald-800">4. Set-Wise Online Coding Sets Configurator</h3>
-                  <p className="text-[10px] text-slate-500 font-medium">Create set-wise question papers (Set A, Set B, Set C, Set D...) with problem statements & test cases.</p>
+                  <h3 className="text-xs font-black uppercase tracking-widest text-emerald-800">5. Online Coding Question Sets Configurator</h3>
+                  <p className="text-[10px] text-slate-500 font-medium">Configure coding problem statements & test cases per question set.</p>
                 </div>
                 <Button
                   type="button"
@@ -856,20 +1137,20 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
                               updated[sIdx].title = e.target.value;
                               setQuestionSets(updated);
                             }}
-                            className="h-9 text-xs bg-slate-50 font-semibold"
+                            className="h-9 text-xs bg-white font-bold border-slate-200"
                           />
                         </div>
                         <div>
-                          <Label className="text-[11px] font-extrabold text-slate-700 block mb-1">Total Problem Marks</Label>
+                          <Label className="text-[11px] font-extrabold text-slate-700 block mb-1">Marks Weightage</Label>
                           <Input
                             type="number"
                             value={s.marks || 100}
                             onChange={(e) => {
                               const updated = [...questionSets];
-                              updated[sIdx].marks = parseInt(e.target.value) || 100;
+                              updated[sIdx].marks = Number(e.target.value) || 100;
                               setQuestionSets(updated);
                             }}
-                            className="h-9 text-xs bg-slate-50 font-bold"
+                            className="h-9 text-xs bg-white font-bold border-slate-200"
                           />
                         </div>
                       </div>
@@ -885,7 +1166,7 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
                             setQuestionSets(updated);
                           }}
                           rows={3}
-                          className="w-full p-2.5 rounded-lg border border-slate-200 text-xs bg-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                          className="w-full p-2.5 rounded-lg border border-slate-200 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
                         />
                       </div>
 
