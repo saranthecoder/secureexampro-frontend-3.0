@@ -2,7 +2,11 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import Swal from "sweetalert2";
 import { useNavigate } from "react-router-dom";
 import BASE_URL from "@/config/api";
+import axiosInstance from "@/config/axiosClient";
 import CreateExamDialog from "@/components/CreateExamDialog";
+import TrafficManagement from "@/components/TrafficManagement";
+import UsersManagement from "@/components/UsersManagement";
+import SetAllocationManagement from "@/components/SetAllocationManagement";
 import Loader from "@/components/Loader";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -74,12 +78,17 @@ function getGoogleDriveEmbedUrl(url: string): string {
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const [exams, setExams] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   const fetchExams = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
     try {
-      const res = await fetch(`${BASE_URL}/exam/all`);
+      const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+      let url = `${BASE_URL}/exam/all`;
+      if (storedUser && storedUser.role === "examiner" && storedUser.email) {
+        url += `?createdBy=${encodeURIComponent(storedUser.email)}`;
+      }
+
+      const res = await fetch(url);
       const data = await res.json();
 
       if (Array.isArray(data)) {
@@ -91,14 +100,24 @@ const AdminDashboard = () => {
       }
     } catch (error) {
       console.error("Failed to fetch exams");
-      setExams([]);
     } finally {
-      if (!silent) setLoading(false);
+      setLoading(false);
     }
   }, []);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "exams" | "monitoring" | "coding_eval" | "settings" | "profile" | "questions" | "analysis">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "exams" | "monitoring" | "coding_eval" | "set_allocation" | "settings" | "profile" | "questions" | "analysis" | "traffic" | "users_mgmt">("dashboard");
   const [selectedExamCodeForCodingEval, setSelectedExamCodeForCodingEval] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
+
+  const isSystemAdmin = useMemo(() => {
+    try {
+      const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+      if (storedUser?.role === "examiner") return false;
+      const isCoreAdminKey = localStorage.getItem("coreAdmin") === "true";
+      return storedUser?.role === "admin" || storedUser?.email === "coreadmin@secureexam.com" || isCoreAdminKey;
+    } catch (e) {
+      return false;
+    }
+  }, []);
 
   // 📐 Sidebar Collapse & Targeted Component Refresh States
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -108,6 +127,23 @@ const AdminDashboard = () => {
   const [profileUsername, setProfileUsername] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
   const [profilePassword, setProfilePassword] = useState("");
+
+  // Core Admin Examiner-Wise Filtering State
+  const [examinersList, setExaminersList] = useState<any[]>([]);
+  const [selectedExaminerFilter, setSelectedExaminerFilter] = useState<string>("ALL");
+
+  useEffect(() => {
+    if (isSystemAdmin) {
+      fetch(`${BASE_URL}/auth/examiners`)
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setExaminersList(data);
+          }
+        })
+        .catch(err => console.error("Failed to fetch examiners list", err));
+    }
+  }, [isSystemAdmin]);
 
   useEffect(() => {
     const savedAdmin = JSON.parse(
@@ -1128,6 +1164,44 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleToggleResultRelease = async (exam: any) => {
+    try {
+      const res = await axiosInstance.post(`/exam/${exam.examCode}/release-results`, {
+        isResultReleased: !exam.isResultReleased
+      });
+      Swal.fire({
+        title: "Result Release Updated",
+        text: res.data.message || "Exam result release status updated.",
+        icon: "success",
+        timer: 1800,
+        showConfirmButton: false
+      });
+      fetchExams(true);
+    } catch (err: any) {
+      Swal.fire("Error", err?.response?.data?.message || "Failed to update result release state", "error");
+    }
+  };
+
+  const handleManualSendScores = async (exam: any) => {
+    try {
+      const confirm = await Swal.fire({
+        title: `Dispatch Scores for ${exam.title}?`,
+        text: `This will manually email scorecards to all candidates who submitted answers for exam ${exam.examCode}.`,
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonText: "Yes, Send Scorecards",
+        confirmButtonColor: "#2563eb"
+      });
+
+      if (!confirm.isConfirmed) return;
+
+      const res = await axiosInstance.post(`/exam/${exam.examCode}/send-scores`);
+      Swal.fire("Dispatched", res.data.message || "Scorecards emailed successfully.", "success");
+    } catch (err: any) {
+      Swal.fire("Dispatch Error", err?.response?.data?.message || "Failed to dispatch score emails", "error");
+    }
+  };
+
   // Clone exam modal state
   const [cloningExam, setCloningExam] = useState<any>(null);
   const [cloneTitle, setCloneTitle] = useState("");
@@ -1775,14 +1849,20 @@ const AdminDashboard = () => {
     }
   };
 
-  // Memoized examinations filtering
+  // Memoized examinations filtering with Examiner-Wise filter
   const filteredExams = useMemo(() => {
     return exams.filter((exam) => {
       const titleMatch = exam.title?.toLowerCase().includes(searchQuery.toLowerCase());
       const codeMatch = exam.examCode?.toLowerCase().includes(searchQuery.toLowerCase());
-      return titleMatch || codeMatch;
+      const creatorMatch = exam.createdBy?.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = titleMatch || codeMatch || creatorMatch;
+
+      if (selectedExaminerFilter !== "ALL") {
+        return matchesSearch && exam.createdBy === selectedExaminerFilter;
+      }
+      return matchesSearch;
     });
-  }, [exams, searchQuery]);
+  }, [exams, searchQuery, selectedExaminerFilter]);
 
   // Memoized metrics calculations for performance optimization
   const totalQuestionsPool = useMemo(() => {
@@ -1824,7 +1904,9 @@ const AdminDashboard = () => {
               {!isSidebarCollapsed && (
                 <div className="flex flex-col text-left">
                   <span className="font-bold text-white text-sm leading-none tracking-tight">SecureExam Pro</span>
-                  <span className="text-[9px] text-slate-400 font-semibold tracking-wider uppercase mt-0.5">Control Center</span>
+                  <span className={`text-[9px] font-semibold tracking-wider uppercase mt-0.5 ${isSystemAdmin ? "text-cyan-400" : "text-purple-400"}`}>
+                    {isSystemAdmin ? "Core System Admin" : "Examiner Workstation"}
+                  </span>
                 </div>
               )}
             </div>
@@ -1881,7 +1963,7 @@ const AdminDashboard = () => {
 
             <button
               onClick={() => setActiveTab("coding_eval")}
-              title="Coding Evaluator"
+              title="Paper Code Evaluator"
               className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"} rounded-xl text-xs font-bold transition-all text-left ${
                 activeTab === "coding_eval"
                   ? "bg-purple-600 text-white shadow-md shadow-purple-600/30"
@@ -1889,7 +1971,27 @@ const AdminDashboard = () => {
               }`}
             >
               <Code2 className="h-4 w-4 shrink-0" />
-              {!isSidebarCollapsed && <span>Coding Evaluator</span>}
+              {!isSidebarCollapsed && <span>Paper Code Evaluator</span>}
+            </button>
+
+            <button
+              onClick={() => setActiveTab("set_allocation")}
+              title="Lobby Set Allocation Desk"
+              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"} rounded-xl text-xs font-bold transition-all text-left ${
+                activeTab === "set_allocation"
+                  ? "bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/30"
+                  : "hover:bg-slate-800 text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Layers className="h-4 w-4 shrink-0 text-amber-400" />
+              {!isSidebarCollapsed && (
+                <div className="flex items-center justify-between w-full">
+                  <span>Lobby Set Allocation</span>
+                  <Badge className="bg-amber-500/20 text-amber-300 text-[9px] px-1.5 py-0 border border-amber-400/30 font-extrabold">
+                    LIVE
+                  </Badge>
+                </div>
+              )}
             </button>
 
             <button
@@ -1943,6 +2045,17 @@ const AdminDashboard = () => {
               <Users className="h-4 w-4 shrink-0" />
               {!isSidebarCollapsed && <span>Admin Profile</span>}
             </button>
+
+            {isSystemAdmin && (
+              <button
+                onClick={() => navigate("/system-admin")}
+                title="SSMS 3.0 System Admin Panel"
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"} rounded-xl text-xs font-extrabold transition-all text-left bg-cyan-950/80 text-cyan-400 border border-cyan-800/60 hover:bg-cyan-900 hover:text-white shadow-md shadow-cyan-950/50 mt-2`}
+              >
+                <Cpu className="h-4 w-4 shrink-0 text-cyan-400" />
+                {!isSidebarCollapsed && <span>Traffic & System Admin</span>}
+              </button>
+            )}
           </div>
 
         </div>
@@ -1955,11 +2068,23 @@ const AdminDashboard = () => {
             </div>
             {!isSidebarCollapsed && (
               <div className="flex flex-col">
-                <span className="text-xs font-bold text-white">Examiner Profile</span>
+                <span className="text-xs font-bold text-white">
+                  {isSystemAdmin ? "Core System Admin" : "Examiner Profile"}
+                </span>
                 <span className="text-[10px] text-slate-500 font-mono">{profileUsername || "coreadmin"}</span>
               </div>
             )}
           </div>
+          {isSystemAdmin && (
+            <Button
+              onClick={() => navigate("/system-admin")}
+              variant="outline"
+              className="w-full bg-slate-950 border-slate-800 text-cyan-400 hover:text-cyan-300 text-xs font-bold gap-2 justify-center h-9 rounded-xl mb-2"
+            >
+              <Shield className="h-3.5 w-3.5" /> {!isSidebarCollapsed && "System Admin Panel"}
+            </Button>
+          )}
+
           <Button
             onClick={handleLogout}
             title="Log Out"
@@ -1986,7 +2111,7 @@ const AdminDashboard = () => {
                   : activeTab === "monitoring" 
                     ? "Student Telemetry & Proctor Monitor" 
                     : activeTab === "coding_eval"
-                      ? "Coding Hybrid Assessment Evaluator"
+                      ? "Paper Code Assessment Evaluator"
                       : activeTab === "questions"
                         ? "Question Bank Manager"
                         : activeTab === "analysis"
@@ -1995,8 +2120,12 @@ const AdminDashboard = () => {
                             ? "Admin Profile & Accounts"
                             : "Platform Proctoring Controls"}
             </h1>
-            <Badge className="bg-slate-100 hover:bg-slate-100 text-slate-500 border border-slate-200 text-[10px] py-0 px-2 rounded font-semibold ml-2">
-              Lobby Active
+            <Badge className={`text-[10px] py-0 px-2 rounded font-bold ml-2 ${
+              isSystemAdmin
+                ? "bg-cyan-100 hover:bg-cyan-100 text-cyan-800 border border-cyan-200"
+                : "bg-purple-100 hover:bg-purple-100 text-purple-800 border border-purple-200"
+            }`}>
+              {isSystemAdmin ? "CORE SYSTEM ADMIN" : "EXAMINER CONTROLLER"}
             </Badge>
           </div>
 
@@ -2017,43 +2146,67 @@ const AdminDashboard = () => {
           {activeTab === "dashboard" ? (
             <div className="space-y-8 text-left">
               {/* ✨ HERO WELCOME BANNER */}
-              <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-950 via-indigo-950 to-purple-950 p-8 text-white shadow-xl border border-slate-800/80">
-                <div className="absolute top-0 right-0 -mt-10 -mr-10 w-80 h-80 rounded-full bg-purple-500/10 blur-3xl pointer-events-none" />
-                <div className="absolute bottom-0 left-1/3 -mb-10 w-60 h-60 rounded-full bg-blue-500/10 blur-2xl pointer-events-none" />
+              <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-indigo-950 to-purple-950 p-8 text-white shadow-2xl border border-slate-800/80">
+                <div className="absolute top-0 right-0 -mt-12 -mr-12 w-96 h-96 rounded-full bg-purple-600/15 blur-3xl pointer-events-none" />
+                <div className="absolute bottom-0 left-1/4 -mb-12 w-72 h-72 rounded-full bg-blue-600/15 blur-3xl pointer-events-none" />
 
-                <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                  <div className="space-y-2 max-w-2xl">
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-bold uppercase tracking-wider">
-                      <Sparkles className="h-3.5 w-3.5 text-purple-400" /> Control Center Overview
+                <div className="relative z-10 space-y-6">
+                  {/* Title & Description Header */}
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                    <div className="space-y-2 max-w-3xl">
+                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-300 text-[11px] font-extrabold uppercase tracking-wider shadow-inner">
+                        <Sparkles className="h-3.5 w-3.5 text-purple-400 animate-pulse" /> Control Center Overview
+                      </div>
+                      <h2 className="text-2xl lg:text-3xl font-black tracking-tight text-white leading-tight">
+                        Secure Exam Pro Analytics & Management Hub
+                      </h2>
+                      <p className="text-slate-300 text-xs leading-relaxed font-normal max-w-2xl">
+                        Monitor live student candidate telemetry, manage Paper Code Set-Wise question paper distributions, run multi-language code execution, and review automated performance reports.
+                      </p>
                     </div>
-                    <h2 className="text-2xl lg:text-3xl font-black tracking-tight text-white">
-                      Secure Exam Pro Analytics & Management Hub
-                    </h2>
-                    <p className="text-slate-300 text-xs leading-relaxed font-normal">
-                      Monitor live student candidate telemetry, manage Coding Hybrid Set-Wise question paper distributions, unlock local IDE access, and review automated performance reports.
-                    </p>
+
+                    <div className="flex items-center gap-2 shrink-0 self-start lg:self-center">
+                      <div className="px-3.5 py-2 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center gap-2 text-xs font-mono text-cyan-300 shadow-inner">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                        <span className="font-bold">Telemetry: Active</span>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-3 shrink-0">
+                  {/* Actions Bar */}
+                  <div className="pt-4 border-t border-slate-800/80 flex flex-wrap items-center gap-3">
                     <Button
                       disabled={refreshingTab === "dashboard"}
                       onClick={() => handleRefreshComponent("dashboard")}
                       variant="outline"
-                      className="bg-white/10 hover:bg-white/20 border-white/20 text-white font-bold text-xs h-10 px-4 rounded-xl gap-1.5"
+                      className="bg-white/10 hover:bg-white/20 border-white/20 text-white font-bold text-xs h-10 px-4 rounded-xl gap-2 transition-all shadow-sm"
                     >
                       <RotateCcw className={`h-4 w-4 text-blue-300 ${refreshingTab === "dashboard" ? "animate-spin" : ""}`} /> Refresh Metrics
                     </Button>
+
                     <CreateExamDialog onExamCreated={fetchExams} />
+
                     <Button
                       onClick={() => setActiveTab("coding_eval")}
-                      className="bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs h-10 px-5 rounded-xl shadow-lg shadow-purple-600/30 gap-1.5"
+                      className="bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs h-10 px-5 rounded-xl shadow-lg shadow-purple-600/30 gap-2 transition-all"
                     >
-                      <Code2 className="h-4 w-4" /> Coding Evaluator
+                      <Code2 className="h-4 w-4" /> Paper Code Evaluator
                     </Button>
+
+                    {isSystemAdmin && (
+                      <Button
+                        onClick={() => navigate("/system-admin")}
+                        variant="outline"
+                        className="bg-cyan-500/20 hover:bg-cyan-500/30 border-cyan-400/30 text-cyan-200 font-bold text-xs h-10 px-4 rounded-xl gap-2 transition-all"
+                      >
+                        <Cpu className="h-4 w-4 text-cyan-400" /> Cluster Traffic
+                      </Button>
+                    )}
+
                     <Button
                       onClick={() => setActiveTab("monitoring")}
                       variant="outline"
-                      className="bg-white/10 hover:bg-white/20 border-white/20 text-white font-bold text-xs h-10 px-4 rounded-xl gap-1.5"
+                      className="bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400/30 text-emerald-200 font-bold text-xs h-10 px-4 rounded-xl gap-2 transition-all"
                     >
                       <Activity className="h-4 w-4 text-emerald-400" /> Live Monitor
                     </Button>
@@ -2061,90 +2214,125 @@ const AdminDashboard = () => {
                 </div>
               </div>
 
+              {/* SSMS 3.0 Traffic Control Banner Card (System Admin Only) */}
+              {isSystemAdmin && (
+                <div className="bg-slate-900 border border-slate-800 text-white p-5 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-lg hover:border-slate-700 transition-colors">
+                  <div className="flex items-center gap-3 text-left">
+                    <div className="p-3 bg-cyan-500/10 border border-cyan-500/20 rounded-xl text-cyan-400 shrink-0">
+                      <Activity className="h-6 w-6 animate-pulse" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-sm font-bold text-white">SSMS 3.0 Traffic Balancer & Cluster Maintenance</h4>
+                        <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
+                          ACTIVE FAILOVER
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Dynamic multi-node Render/AWS server failover active. Zero downtime guaranteed during high concurrent exam drives.
+                      </p>
+                    </div>
+                  </div>
+
+                  <Button
+                    onClick={() => navigate("/system-admin")}
+                    className="bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs h-9 px-4 rounded-xl shrink-0 shadow-md transition-all"
+                  >
+                    Manage System Cluster
+                  </Button>
+                </div>
+              )}
+
               {/* 📊 DYNAMIC METRICS OVERVIEW CARDS */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 {/* Metric 1: Total Assessments */}
-                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between hover:shadow-md transition-all">
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+                  <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-600" />
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] uppercase font-extrabold text-slate-400">Assessments Built</span>
-                    <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <span className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider">Assessments Built</span>
+                    <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
                       <FileText className="h-4 w-4" />
                     </div>
                   </div>
                   <div>
-                    <h3 className="text-2xl font-black text-slate-900">{exams.length}</h3>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-1 font-bold">
-                      <span className="text-blue-600">{exams.filter(e => e.assessmentType === "coding_hybrid").length} Coding Hybrid</span>
-                      <span>•</span>
-                      <span>{exams.filter(e => e.assessmentType !== "coding_hybrid").length} Standard</span>
+                    <h3 className="text-3xl font-black text-slate-900 tracking-tight">{exams.length}</h3>
+                    <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 mt-2 font-bold">
+                      <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-100">{exams.filter(e => e.assessmentType === "standard" || !e.assessmentType).length} Standard</span>
+                      <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-100">{exams.filter(e => e.assessmentType === "online_coding").length} Coding</span>
+                      <span className="bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded border border-purple-100">{exams.filter(e => e.assessmentType === "paper_code" || e.assessmentType === "coding_hybrid").length} Paper</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Metric 2: Coding Hybrid Drives */}
-                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between hover:shadow-md transition-all border-l-4 border-l-purple-600">
+                {/* Metric 2: Paper Code & Coding Drives */}
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+                  <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500 to-pink-600" />
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] uppercase font-extrabold text-purple-700">Coding Hybrid Drives</span>
-                    <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                    <span className="text-[10px] uppercase font-extrabold text-purple-700 tracking-wider">Paper Code & Coding</span>
+                    <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-110 transition-transform">
                       <Code2 className="h-4 w-4" />
                     </div>
                   </div>
                   <div>
-                    <h3 className="text-2xl font-black text-purple-900">
-                      {exams.filter(e => e.assessmentType === "coding_hybrid").length}
+                    <h3 className="text-3xl font-black text-purple-900 tracking-tight">
+                      {exams.filter(e => e.assessmentType === "paper_code" || e.assessmentType === "coding_hybrid" || e.assessmentType === "online_coding").length}
                     </h3>
-                    <div className="text-[10px] text-purple-600 font-extrabold mt-1">
-                      Set A, B, C, D Paper Allocation
+                    <div className="text-[10px] text-purple-600 font-extrabold mt-2 flex items-center gap-1">
+                      <span className="bg-purple-50 border border-purple-100 px-2 py-0.5 rounded text-purple-700">Set A, B, C, D Allocation</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Metric 3: Active Test-Takers */}
-                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between hover:shadow-md transition-all border-l-4 border-l-emerald-500">
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+                  <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-400 to-teal-600" />
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] uppercase font-extrabold text-slate-400">Live Active Candidates</span>
-                    <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                    <span className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider">Live Active Candidates</span>
+                    <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
                       <Activity className="h-4 w-4 animate-pulse" />
                     </div>
                   </div>
                   <div>
-                    <h3 className="text-2xl font-black text-emerald-600">
+                    <h3 className="text-3xl font-black text-emerald-600 tracking-tight">
                       {Object.keys(activeCandidates).length}
                     </h3>
-                    <div className="text-[10px] text-emerald-700 font-extrabold mt-1 flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" /> Real-Time Telemetry Active
+                    <div className="text-[10px] text-emerald-700 font-extrabold mt-2 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                      <span>Telemetry Live</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Metric 4: Total Questions Pool */}
-                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between hover:shadow-md transition-all">
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+                  <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 to-blue-600" />
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] uppercase font-extrabold text-slate-400">Questions Pool</span>
-                    <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                    <span className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider">Questions Pool</span>
+                    <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform">
                       <Grid className="h-4 w-4" />
                     </div>
                   </div>
                   <div>
-                    <h3 className="text-2xl font-black text-slate-900">{totalQuestionsPool}</h3>
-                    <div className="text-[10px] text-slate-400 font-bold mt-1">
-                      Available across question banks
+                    <h3 className="text-3xl font-black text-slate-900 tracking-tight">{totalQuestionsPool}</h3>
+                    <div className="text-[10px] text-slate-500 font-bold mt-2">
+                      Available in Question Banks
                     </div>
                   </div>
                 </div>
 
                 {/* Metric 5: Platform Integrity Score */}
-                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between hover:shadow-md transition-all">
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+                  <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-400 to-emerald-500" />
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] uppercase font-extrabold text-slate-400">Integrity Rating</span>
-                    <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                    <span className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider">Integrity Rating</span>
+                    <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform">
                       <Shield className="h-4 w-4" />
                     </div>
                   </div>
                   <div>
-                    <h3 className="text-2xl font-black text-slate-900">98.6%</h3>
-                    <div className="text-[10px] text-emerald-600 font-bold mt-1 flex items-center gap-1">
-                      <CheckCircle2 className="h-3 w-3" /> AI Proctor Verified
+                    <h3 className="text-3xl font-black text-slate-900 tracking-tight">98.6%</h3>
+                    <div className="text-[10px] text-emerald-600 font-bold mt-2 flex items-center gap-1">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> AI Proctor Verified
                     </div>
                   </div>
                 </div>
@@ -2231,13 +2419,17 @@ const AdminDashboard = () => {
                             <div className="flex items-center gap-2">
                               <span className="font-extrabold text-slate-900 text-sm">{ex.title}</span>
                               <span className="font-mono text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-bold">{ex.examCode}</span>
-                              {ex.assessmentType === "coding_hybrid" ? (
+                              {ex.assessmentType === "online_coding" ? (
+                                <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px] rounded font-extrabold uppercase py-0.5 px-2">
+                                  Online Coding Platform
+                                </Badge>
+                              ) : ex.assessmentType === "paper_code" || ex.assessmentType === "coding_hybrid" ? (
                                 <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[10px] rounded font-extrabold uppercase py-0.5 px-2">
-                                  Coding Hybrid
+                                  Paper Code (Hybrid)
                                 </Badge>
                               ) : (
                                 <Badge className="bg-blue-50 text-blue-700 border-blue-100 text-[10px] rounded font-bold uppercase py-0.5 px-2">
-                                  Standard
+                                  Standard Online
                                 </Badge>
                               )}
                             </div>
@@ -2391,6 +2583,45 @@ const AdminDashboard = () => {
               {/* Table Section */}
               <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden p-6 space-y-4">
                 
+                {/* Examiner-Wise Master Filter (For Core Admin) */}
+                {isSystemAdmin && (
+                  <div className="bg-slate-900 border border-slate-800 text-white p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-3 text-left shadow-md">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-5 w-5 text-cyan-400 shrink-0" />
+                      <div>
+                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">Examiner-Wise Assessment Filter</h4>
+                        <p className="text-[11px] text-slate-400">View platform-wide exams or filter strictly by Examiner Account</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 w-full md:w-auto">
+                      <select
+                        value={selectedExaminerFilter}
+                        onChange={(e) => setSelectedExaminerFilter(e.target.value)}
+                        className="bg-slate-950 border border-slate-700 text-cyan-300 font-bold text-xs h-10 px-3 rounded-lg focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                      >
+                        <option value="ALL">🌐 All Examiners (Master View)</option>
+                        {examinersList.map((ex: any) => (
+                          <option key={ex._id || ex.id} value={ex.email}>
+                            👤 {ex.name} ({ex.email})
+                          </option>
+                        ))}
+                      </select>
+
+                      {selectedExaminerFilter !== "ALL" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setSelectedExaminerFilter("ALL")}
+                          className="text-slate-400 hover:text-white text-xs h-9 px-3"
+                        >
+                          Clear Filter
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Table Header controls */}
                 <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
                   
@@ -2398,7 +2629,7 @@ const AdminDashboard = () => {
                   <div className="relative w-full max-w-sm">
                     <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                     <Input
-                      placeholder="Filter by title or code..."
+                      placeholder="Filter by title, code, or examiner..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="pl-9 bg-slate-50/50 border-slate-200 text-xs h-10 w-full"
@@ -2448,7 +2679,13 @@ const AdminDashboard = () => {
                           <tr key={exam._id} className="hover:bg-slate-50/50 transition-colors">
                             <td className="px-5 py-4 text-left">
                               <div className="font-bold text-slate-900">{exam.title}</div>
-                              <div className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                              {exam.createdBy && (
+                                <div className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 text-slate-600 text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold mt-1">
+                                  <span>Examiner:</span>
+                                  <span className="text-slate-900 font-bold">{exam.createdBy}</span>
+                                </div>
+                              )}
+                              <div className="text-[10px] text-slate-400 font-semibold mt-1">
                                 Start: {exam.startTime ? new Date(exam.startTime).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "N/A"} | End: {exam.endTime ? new Date(exam.endTime).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "N/A"}
                               </div>
                             </td>
@@ -2458,6 +2695,29 @@ const AdminDashboard = () => {
                             <td className="px-5 py-4 text-center font-black text-slate-900">{calculateTotalMarks(exam.questions)}</td>
                             <td className="px-5 py-4 text-right">
                               <div className="inline-flex gap-1.5 justify-end">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  title={exam.isResultReleased ? "Hide Results from Students" : "Release Results to Students"}
+                                  className={`h-8 px-2 text-xs gap-1 font-semibold ${
+                                    exam.isResultReleased
+                                      ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                      : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                  }`}
+                                  onClick={() => handleToggleResultRelease(exam)}
+                                >
+                                  {exam.isResultReleased ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                                  {exam.isResultReleased ? "Released" : "Release Results"}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  title="Send Scorecards manually to candidates"
+                                  className="h-8 px-2 text-xs gap-1 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold"
+                                  onClick={() => handleManualSendScores(exam)}
+                                >
+                                  <Mail className="h-3.5 w-3.5" /> Send Scores
+                                </Button>
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -2616,105 +2876,12 @@ const AdminDashboard = () => {
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {/* BULK SELECTION & SET ALLOCATION TOOLBAR (CODING HYBRID ONLY) */}
-                        {monitorExam?.assessmentType === "coding_hybrid" && (
-                          <div className="bg-gradient-to-r from-purple-900 via-slate-900 to-indigo-950 p-3.5 px-5 rounded-xl border border-purple-500/30 shadow-md flex flex-wrap items-center justify-between gap-3 text-white">
-                            <div className="flex items-center gap-3">
-                              <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-lg border border-white/10">
-                                <input
-                                  type="checkbox"
-                                  id="bulkSelectAllHeaderBar"
-                                  checked={selectedStudentEmails.length > 0 && selectedStudentEmails.length === results.map((r: any) => r.studentEmail).filter(Boolean).length}
-                                  onChange={handleToggleSelectAllStudents}
-                                  className="h-4 w-4 rounded border-white/30 text-purple-500 focus:ring-purple-400 cursor-pointer"
-                                />
-                                <label htmlFor="bulkSelectAllHeaderBar" className="text-xs font-bold text-purple-200 cursor-pointer select-none">
-                                  {selectedStudentEmails.length === results.length && results.length > 0 ? "Deselect All" : "Select All"}
-                                </label>
-                              </div>
-
-                              <span className="text-xs font-semibold text-slate-300">
-                                <strong className="text-white font-mono bg-purple-500/30 px-2.5 py-0.5 rounded border border-purple-400/30 text-xs">
-                                  {selectedStudentEmails.length}
-                                </strong> of {results.length} Students Selected
-                              </span>
-                            </div>
-
-                            <div className="flex items-center gap-2.5">
-                              <select
-                                value={selectedBulkSet}
-                                onChange={(e) => setSelectedBulkSet(e.target.value)}
-                                disabled={selectedStudentEmails.length === 0 || bulkAssigning}
-                                className="bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-lg border border-purple-500/40 focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-sm cursor-pointer disabled:opacity-50"
-                              >
-                                <option value="">-- Choose Set to Allocate --</option>
-                                {monitorExam?.questionSets?.length > 0 ? (
-                                  monitorExam.questionSets.map((qs: any) => (
-                                    <option key={qs.setName} value={qs.setName}>{qs.setName}</option>
-                                  ))
-                                ) : (
-                                  <>
-                                    <option value="Set A">Set A</option>
-                                    <option value="Set B">Set B</option>
-                                    <option value="Set C">Set C</option>
-                                    <option value="Set D">Set D</option>
-                                    <option value="Set E">Set E</option>
-                                  </>
-                                )}
-                              </select>
-
-                              <Button
-                                size="sm"
-                                disabled={selectedStudentEmails.length === 0 || !selectedBulkSet || bulkAssigning}
-                                onClick={() => handleBulkAssignSet()}
-                                className="bg-purple-600 hover:bg-purple-500 text-white font-black text-xs h-8 px-3.5 rounded-lg shadow gap-1.5 disabled:opacity-50"
-                              >
-                                {bulkAssigning ? (
-                                  <>
-                                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                    Allocating...
-                                  </>
-                                ) : (
-                                  <>
-                                    <Layers className="h-3.5 w-3.5" />
-                                    Allocate Set ({selectedStudentEmails.length})
-                                  </>
-                                )}
-                              </Button>
-
-                              {selectedStudentEmails.length > 0 && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => setSelectedStudentEmails([])}
-                                  className="text-slate-300 hover:text-white hover:bg-white/10 text-xs font-bold h-8 px-2.5 rounded-lg"
-                                >
-                                  Clear
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
                         <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-white shadow-sm">
                           <table className="w-full text-slate-700 text-xs text-left align-middle border-collapse">
                             <thead>
                               <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase font-bold text-[10px] tracking-wider whitespace-nowrap">
-                                {monitorExam?.assessmentType === "coding_hybrid" && (
-                                  <th className="px-4 py-3.5 w-12 text-center">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedStudentEmails.length > 0 && selectedStudentEmails.length === results.map((r: any) => r.studentEmail).filter(Boolean).length}
-                                      onChange={handleToggleSelectAllStudents}
-                                      className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
-                                    />
-                                  </th>
-                                )}
                                 <th className="px-4 py-3.5 min-w-[160px]">Student Name</th>
                                 <th className="px-4 py-3.5 min-w-[220px]">Email Address</th>
-                                {monitorExam?.assessmentType === "coding_hybrid" && (
-                                  <th className="px-4 py-3.5 text-center min-w-[140px]">Assigned Set</th>
-                                )}
                                 <th className="px-4 py-3.5 text-center min-w-[210px]">Behavior Logs (Tab/Face/Noise/FS/Net)</th>
                                 <th className="px-4 py-3.5 text-center min-w-[140px]">Proctor Status</th>
                                 <th className="px-4 py-3.5 text-right min-w-[160px]">Submitted At</th>
@@ -2723,17 +2890,7 @@ const AdminDashboard = () => {
                             </thead>
                             <tbody className="divide-y divide-slate-100 font-sans">
                               {results.map((r) => (
-                                <tr key={r._id} className={`transition-colors whitespace-nowrap ${selectedStudentEmails.includes(r.studentEmail) ? "bg-purple-50/60" : "hover:bg-slate-50/60"}`}>
-                                  {monitorExam?.assessmentType === "coding_hybrid" && (
-                                    <td className="px-4 py-3.5 text-center">
-                                      <input
-                                        type="checkbox"
-                                        checked={selectedStudentEmails.includes(r.studentEmail)}
-                                        onChange={() => handleToggleSelectStudent(r.studentEmail)}
-                                        className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
-                                      />
-                                    </td>
-                                  )}
+                                <tr key={r._id} className="hover:bg-slate-50/60 transition-colors whitespace-nowrap">
                                   <td className="px-4 py-3.5 font-bold text-slate-800">
                                     <div className="flex items-center gap-2">
                                       <span>{r.studentName}</span>
@@ -2743,44 +2900,6 @@ const AdminDashboard = () => {
                                     </div>
                                   </td>
                                   <td className="px-4 py-3.5 text-slate-500 font-mono text-[11px]">{r.studentEmail || "N/A"}</td>
-
-                                  {/* ASSIGNED SET COLUMN & SELECTOR (CODING HYBRID ONLY) */}
-                                  {monitorExam?.assessmentType === "coding_hybrid" && (
-                                    <td className="px-4 py-3.5 text-center">
-                                      <select
-                                        value={r.assignedSet || ""}
-                                        disabled={actionLoadingMap[`assignSet_${r.studentEmail}`]}
-                                        onChange={(e) => handleAssignSet(monitorExam?.examCode || "", r.studentEmail, e.target.value)}
-                                        className={`px-2.5 py-1.5 text-xs font-extrabold rounded-lg border focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm cursor-pointer transition-all ${
-                                          actionLoadingMap[`assignSet_${r.studentEmail}`]
-                                            ? "opacity-50 cursor-wait bg-slate-100"
-                                            : r.assignedSet
-                                            ? "bg-purple-600 text-white border-purple-700 font-black shadow"
-                                            : "bg-amber-50 text-amber-900 border-amber-300 font-bold"
-                                        }`}
-                                      >
-                                        {actionLoadingMap[`assignSet_${r.studentEmail}`] ? (
-                                          <option value="">Assigning Set...</option>
-                                        ) : (
-                                          <>
-                                            <option value="" className="bg-white text-slate-700">-- Select Question Set --</option>
-                                            {monitorExam?.questionSets?.length > 0 ? (
-                                              monitorExam.questionSets.map((qs: any) => (
-                                                <option key={qs.setName} value={qs.setName} className="bg-white text-slate-800 font-bold">{qs.setName}</option>
-                                              ))
-                                            ) : (
-                                              <>
-                                                <option value="Set A" className="bg-white text-slate-800 font-bold">Set A</option>
-                                                <option value="Set B" className="bg-white text-slate-800 font-bold">Set B</option>
-                                                <option value="Set C" className="bg-white text-slate-800 font-bold">Set C</option>
-                                                <option value="Set D" className="bg-white text-slate-800 font-bold">Set D</option>
-                                              </>
-                                            )}
-                                          </>
-                                        )}
-                                      </select>
-                                    </td>
-                                  )}
 
                                   {/* BEHAVIOR LOGS COLUMN */}
                                   <td className="px-4 py-3.5 text-center text-[10px] font-semibold text-slate-500">
@@ -3922,6 +4041,12 @@ const AdminDashboard = () => {
                   </div>
                 )}
               </div>
+          ) : activeTab === "set_allocation" ? (
+            <SetAllocationManagement exams={exams} onRefreshExams={fetchExams} />
+          ) : activeTab === "traffic" ? (
+            <TrafficManagement />
+          ) : activeTab === "users_mgmt" ? (
+            <UsersManagement />
           ) : activeTab === "profile" ? (
             <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm max-w-xl text-left space-y-6">
               <div>

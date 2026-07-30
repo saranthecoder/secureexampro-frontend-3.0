@@ -53,13 +53,13 @@ const StudentDashboard = () => {
   const [loading, setLoading] = useState(false);
   const [loaderMessage, setLoaderMessage] = useState("");
 
-  // Stagger queue delay utility (email-hash based, 0–30s)
+  // Stagger queue delay utility (email-hash based, 0–5s max in all cases)
   const getStaggerDelay = (emailStr: string) => {
     let hash = 0;
     for (let i = 0; i < emailStr.length; i++) {
       hash = emailStr.charCodeAt(i) + ((hash << 5) - hash);
     }
-    return Math.abs(hash) % 30;
+    return Math.min(5, Math.abs(hash) % 6);
   };
 
   // Student reports state
@@ -100,6 +100,48 @@ const StudentDashboard = () => {
       setProfileRollNumber(user.rollNumber || "");
     }
   }, [user]);
+
+  const [oldPin, setOldPin] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [pinLoading, setPinLoading] = useState(false);
+
+  const handleUpdatePin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPin || newPin.trim().length !== 6) {
+      Swal.fire("Validation Error", "New PIN must be a 6-digit numeric code.", "warning");
+      return;
+    }
+
+    setPinLoading(true);
+    try {
+      const res = await fetch(`${BASE_URL}/auth/update-pin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user?.id || (user as any)?._id,
+          registerId: user?.registerId || user?.rollNumber,
+          oldPin,
+          newPin
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setOldPin("");
+        setNewPin("");
+        if (setUser && data.user) {
+          setUser({ ...data.user, loginTimestamp: Date.now() });
+        }
+        Swal.fire("PIN Updated", "Your 6-digit security PIN has been updated successfully.", "success");
+      } else {
+        Swal.fire("Update Failed", data.message || "Failed to update PIN", "error");
+      }
+    } catch (err: any) {
+      Swal.fire("Error", "Network error updating PIN", "error");
+    } finally {
+      setPinLoading(false);
+    }
+  };
 
   const handleProfileUpdate = async () => {
     setProfileError("");
@@ -809,9 +851,13 @@ const StudentDashboard = () => {
                             <td className="px-6 py-4 font-mono text-[11px] text-slate-500">{r.examCode}</td>
                             
                             <td className="px-6 py-4 text-center">
-                              {r.assessmentType === "coding_hybrid" ? (
+                              {r.assessmentType === "online_coding" ? (
+                                <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px] font-extrabold uppercase py-0.5 px-2">
+                                  Online Coding
+                                </Badge>
+                              ) : r.assessmentType === "coding_hybrid" || r.assessmentType === "paper_code" ? (
                                 <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[10px] font-extrabold uppercase py-0.5 px-2">
-                                  Coding Hybrid
+                                  Paper Code (Hybrid)
                                 </Badge>
                               ) : (
                                 <Badge className="bg-blue-50 text-blue-700 border-blue-100 text-[10px] font-bold uppercase py-0.5 px-2">
@@ -821,7 +867,11 @@ const StudentDashboard = () => {
                             </td>
 
                             <td className="px-6 py-4 text-center">
-                              {r.assessmentType === "coding_hybrid" ? (
+                              {r.isResultReleased === false ? (
+                                <Badge className="bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-bold py-1 px-2.5">
+                                  Result Pending Release
+                                </Badge>
+                              ) : r.assessmentType === "coding_hybrid" ? (
                                 <div className="flex flex-col items-center justify-center gap-0.5">
                                   <div className="flex items-center gap-1.5 text-[10px]">
                                     <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-bold border border-emerald-200">
@@ -848,23 +898,31 @@ const StudentDashboard = () => {
 
                             <td className="px-6 py-4 text-right">
                               <div className="flex items-center justify-end gap-2">
-                                <Button
-                                  size="sm"
-                                  onClick={() => setSelectedReport(r)}
-                                  className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs h-8 px-3 rounded-lg shadow-sm gap-1.5"
-                                >
-                                  <Eye className="h-3.5 w-3.5" /> View Analysis
-                                </Button>
+                                {r.isResultReleased === false ? (
+                                  <span className="text-xs text-amber-600 font-semibold bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200">
+                                    Pending Release by Examiner
+                                  </span>
+                                ) : (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      onClick={() => setSelectedReport(r)}
+                                      className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs h-8 px-3 rounded-lg shadow-sm gap-1.5"
+                                    >
+                                      <Eye className="h-3.5 w-3.5" /> View Analysis
+                                    </Button>
 
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleExportStudentReportExcel(r)}
-                                  className="h-8 px-2.5 text-xs font-bold border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg gap-1 shadow-sm"
-                                  title="Download Excel Scorecard"
-                                >
-                                  <Download className="h-3.5 w-3.5 text-emerald-600" /> Excel
-                                </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleExportStudentReportExcel(r)}
+                                      className="h-8 px-2.5 text-xs font-bold border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg gap-1 shadow-sm"
+                                      title="Download Excel Scorecard"
+                                    >
+                                      <Download className="h-3.5 w-3.5 text-emerald-600" /> Excel
+                                    </Button>
+                                  </>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -1378,6 +1436,52 @@ const StudentDashboard = () => {
                       <Save className="h-4 w-4" /> Save Profile Changes
                     </Button>
                   </div>
+              </div>
+
+              {/* Update 6-Digit PIN Card */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
+                <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  <KeyRound className="h-4 w-4 text-emerald-600" />
+                  Update 6-Digit Security PIN
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Update your initial admin-assigned 6-digit PIN to a personal security code for future logins.
+                </p>
+
+                <form onSubmit={handleUpdatePin} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">Existing PIN (Optional if initial PIN)</Label>
+                    <Input
+                      type="password"
+                      maxLength={6}
+                      placeholder="••••••"
+                      value={oldPin}
+                      onChange={(e) => setOldPin(e.target.value)}
+                      className="bg-slate-50/50 border-slate-200 focus-visible:ring-blue-500 h-10 text-sm font-bold text-slate-800 rounded-xl tracking-widest"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">New 6-Digit PIN *</Label>
+                    <Input
+                      type="password"
+                      maxLength={6}
+                      required
+                      placeholder="••••••"
+                      value={newPin}
+                      onChange={(e) => setNewPin(e.target.value)}
+                      className="bg-slate-50/50 border-slate-200 focus-visible:ring-blue-500 h-10 text-sm font-bold text-slate-800 rounded-xl tracking-widest"
+                    />
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={pinLoading}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-11 text-sm shadow-md transition-all rounded-xl flex items-center justify-center gap-1.5"
+                  >
+                    <KeyRound className="h-4 w-4" /> {pinLoading ? "Updating..." : "Update Security PIN"}
+                  </Button>
+                </form>
               </div>
             </div>
           ) : null}

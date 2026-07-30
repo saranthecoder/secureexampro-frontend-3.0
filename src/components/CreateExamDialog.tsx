@@ -18,6 +18,15 @@ import {
   FileSpreadsheet,
   CheckCircle2,
   AlertTriangle,
+  FileText,
+  Code2,
+  Shield,
+  Camera,
+  Eye,
+  Mic,
+  Monitor,
+  Lock,
+  Maximize
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -40,39 +49,101 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
   const [totalMarks, setTotalMarks] = useState(0);
   const [parseError, setParseError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [cameraMonitor, setCameraMonitor] = useState(false);
-  const [dispatchPolicy, setDispatchPolicy] = useState("none");
-  const [assessmentType, setAssessmentType] = useState<"standard" | "coding_hybrid">("standard");
+  const [cameraMonitor, setCameraMonitor] = useState(true);
+  const [aiProctorActive, setAiProctorActive] = useState(true);
+  const [micMonitor, setMicMonitor] = useState(false);
+  const [screenShareMonitor, setScreenShareMonitor] = useState(true);
+  const [trackTabSwitches, setTrackTabSwitches] = useState(true);
+  const [trackFullScreenExit, setTrackFullScreenExit] = useState(true);
+  const [trackInternetIssues, setTrackInternetIssues] = useState(true);
+  const [maxTabSwitches, setMaxTabSwitches] = useState(3);
+  const [maxFullScreenExits, setMaxFullScreenExits] = useState(3);
+  const [dispatchPolicy, setDispatchPolicy] = useState("manual");
+  const [assessmentType, setAssessmentType] = useState<"standard" | "online_coding" | "paper_code" | "coding_hybrid">("standard");
+
+  // Online Coding Problem Configuration State
+  const [codingProblemTitle, setCodingProblemTitle] = useState("Longest Substring Without Repeating Characters");
+  const [codingProblemStatement, setCodingProblemStatement] = useState("Given a string s, find the length of the longest substring without repeating characters.");
+  const [codingProblemMarks, setCodingProblemMarks] = useState(100);
+  const [codingTestCases, setCodingTestCases] = useState<any[]>([
+    {
+      input: "abcabcbb",
+      expectedOutput: "3",
+      explanation: "The answer is 'abc', with length 3.",
+      isHidden: false,
+      weightage: 25
+    },
+    {
+      input: "bbbbb",
+      expectedOutput: "1",
+      explanation: "The answer is 'b', with length 1.",
+      isHidden: false,
+      weightage: 25
+    },
+    {
+      input: "pwwkew",
+      expectedOutput: "3",
+      explanation: "Hidden evaluation test case 1.",
+      isHidden: true,
+      weightage: 25
+    },
+    {
+      input: "aab",
+      expectedOutput: "2",
+      explanation: "Hidden evaluation test case 2.",
+      isHidden: true,
+      weightage: 25
+    }
+  ]);
+  const [starterTemplates, setStarterTemplates] = useState<any>({
+    python: `def solve():\n    # Write Python solution here\n    pass\n\nif __name__ == "__main__":\n    solve()`,
+    java: `import java.util.*;\n\npublic class Solution {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        // Write Java solution here\n    }\n}`,
+    cpp: `#include <iostream>\nusing namespace std;\n\nint main() {\n    // Write C++ solution here\n    return 0;\n}`,
+    c: `#include <stdio.h>\n\nint main() {\n    // Write C solution here\n    return 0;\n}`,
+    javascript: `const fs = require('fs');\n// Write JavaScript solution here`
+  });
   const [questionSets, setQuestionSets] = useState<any[]>([
     {
       setName: "Set A",
+      title: "Set A: Implement Queue using Stacks",
+      marks: 100,
       paperMaxMarks: 50,
       executionMaxMarks: 50,
-      problemStatement: "Set A Problem 1: Write a C++/Java/Python program to implement a Queue using Stacks.",
+      problemStatement: "Set A: Implement a Queue using two Stacks. Process incoming operation queries efficiently.",
       sampleInputOutput: "Input: Enqueue(10), Enqueue(20), Dequeue()\nOutput: Dequeued Element: 10",
-      instructions: "1. Write logic on physical paper.\n2. Execute code in local IDE.",
+      instructions: "1. Write logic on paper.\n2. Execute code in IDE.",
+      testCases: [
+        { input: "5\n1 10\n1 20\n2", expectedOutput: "10", explanation: "Open Sample Test Case 1", isHidden: false, weightage: 50 },
+        { input: "3\n1 5\n2\n2", expectedOutput: "5\nEMPTY", explanation: "Hidden Evaluation Test Case", isHidden: true, weightage: 50 }
+      ],
       problems: [
         {
           title: "Problem 1",
-          problemStatement: "Set A Problem 1: Write a C++/Java/Python program to implement a Queue using Stacks.",
+          problemStatement: "Set A: Implement a Queue using two Stacks. Process incoming operation queries efficiently.",
           sampleInputOutput: "Input: Enqueue(10), Enqueue(20), Dequeue()\nOutput: Dequeued Element: 10",
-          instructions: "1. Write logic on physical paper.\n2. Execute code in local IDE."
+          instructions: "1. Write logic on paper.\n2. Execute code in IDE."
         }
       ]
     },
     {
       setName: "Set B",
+      title: "Set B: Find Longest Palindromic Substring",
+      marks: 100,
       paperMaxMarks: 50,
       executionMaxMarks: 50,
-      problemStatement: "Set B Problem 1: Write a C++/Java/Python program to find the Longest Palindromic Substring.",
+      problemStatement: "Set B: Given a string s, return the longest palindromic substring in s.",
       sampleInputOutput: "Input: 'babad'\nOutput: 'bab' or 'aba'",
-      instructions: "1. Write logic on physical paper.\n2. Execute code in local IDE.",
+      instructions: "1. Write logic on paper.\n2. Execute code in IDE.",
+      testCases: [
+        { input: "babad", expectedOutput: "bab", explanation: "Open Sample Test Case 1", isHidden: false, weightage: 50 },
+        { input: "cbbd", expectedOutput: "bb", explanation: "Hidden Evaluation Test Case", isHidden: true, weightage: 50 }
+      ],
       problems: [
         {
           title: "Problem 1",
-          problemStatement: "Set B Problem 1: Write a C++/Java/Python program to find the Longest Palindromic Substring.",
+          problemStatement: "Set B: Given a string s, return the longest palindromic substring in s.",
           sampleInputOutput: "Input: 'babad'\nOutput: 'bab' or 'aba'",
-          instructions: "1. Write logic on physical paper.\n2. Execute code in local IDE."
+          instructions: "1. Write logic on paper.\n2. Execute code in IDE."
         }
       ]
     }
@@ -89,8 +160,16 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
     setQuestionsCount(0);
     setTotalMarks(0);
     setParseError("");
-    setCameraMonitor(false);
-    setDispatchPolicy("none");
+    setCameraMonitor(true);
+    setAiProctorActive(true);
+    setMicMonitor(false);
+    setScreenShareMonitor(true);
+    setTrackTabSwitches(true);
+    setTrackFullScreenExit(true);
+    setTrackInternetIssues(true);
+    setMaxTabSwitches(3);
+    setMaxFullScreenExits(3);
+    setDispatchPolicy("manual");
     setAssessmentType("standard");
   };
 
@@ -257,7 +336,7 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
       const formData = new FormData();
       formData.append("title", title);
       formData.append("examCode", code.toUpperCase());
-      formData.append("duration", assessmentType === "coding_hybrid" ? "0" : duration);
+      formData.append("duration", (assessmentType === "paper_code" || assessmentType === "coding_hybrid") ? "0" : duration);
       formData.append(
         "startTime",
         startTime ? new Date(startTime).toISOString() : "",
@@ -271,16 +350,35 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
       formData.append("adminEmail", "coreadmin@secureexam.com");
       if (file) {
         formData.append("file", file);
-      } else if (assessmentType === "coding_hybrid") {
-        const dummyBlob = new Blob(["Section,Question Type,Question,Correct Answer,Marks\nCoding,DES,Coding Hybrid Question Set,N/A,100"], { type: "text/csv" });
+      } else if (assessmentType === "paper_code" || assessmentType === "coding_hybrid" || assessmentType === "online_coding") {
+        const dummyBlob = new Blob(["Section,Question Type,Question,Correct Answer,Marks\nCoding,CODING,Coding Question Set,N/A,100"], { type: "text/csv" });
         formData.append("file", dummyBlob, "coding_questions.csv");
       }
 
       formData.append("cameraMonitor", String(cameraMonitor));
-      formData.append("dispatchPolicy", dispatchPolicy);
+      formData.append("aiProctorActive", String(aiProctorActive));
+      formData.append("micMonitor", String(micMonitor));
+      formData.append("screenShareMonitor", String(screenShareMonitor));
+      formData.append("trackTabSwitches", String(trackTabSwitches));
+      formData.append("trackFullScreenExit", String(trackFullScreenExit));
+      formData.append("trackInternetIssues", String(trackInternetIssues));
+      formData.append("maxTabSwitches", String(maxTabSwitches));
+      formData.append("maxFullScreenExits", String(maxFullScreenExits));
+      formData.append("dispatchPolicy", "manual");
       formData.append("assessmentType", assessmentType);
-      if (assessmentType === "coding_hybrid") {
+      if (assessmentType === "paper_code" || assessmentType === "coding_hybrid" || assessmentType === "online_coding") {
         formData.append("questionSets", JSON.stringify(questionSets));
+      }
+      if (assessmentType === "online_coding") {
+        const codingQuestionPayload = questionSets.map((s) => ({
+          question: `${s.title || `Set ${s.setName}`}\n\n${s.problemStatement || ""}`,
+          marks: s.marks || 100,
+          questionType: "CODING",
+          setName: s.setName,
+          starterTemplates,
+          testCases: s.testCases || []
+        }));
+        formData.append("onlineCodingConfig", JSON.stringify(codingQuestionPayload));
       }
 
       const res = await fetch(`${BASE_URL}/exam/create`, {
@@ -352,70 +450,96 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
         <div
           className={`space-y-5 flex-grow overflow-auto min-h-0 ${loading ? "pointer-events-none opacity-40" : ""}`}
         >
-          {/* Card 0: Assessment Category Mode */}
-          <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl space-y-3 text-left">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">0. Assessment Type & Category</h3>
-            <div className="grid grid-cols-2 gap-3">
+
+
+          {/* Card 1: Assessment Format Selector (3 Divisions) */}
+          <div className="p-4 bg-slate-50/80 border border-slate-200/80 rounded-xl space-y-2 text-left">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-700">1. Assessment Format (3 Divisions)</h3>
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border bg-blue-50 text-blue-800 border-blue-200">
+                Selected: {assessmentType === "standard" ? "Standard Online" : assessmentType === "online_coding" ? "Online Coding Platform" : "Paper Code (Hybrid)"}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
               <button
                 type="button"
                 onClick={() => setAssessmentType("standard")}
-                className={`p-3 rounded-xl border-2 text-left transition-all ${
+                className={`p-3.5 rounded-xl border-2 text-left transition-all ${
                   assessmentType === "standard"
-                    ? "border-blue-600 bg-blue-50/40 text-blue-900 shadow-sm"
-                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                    ? "bg-blue-50/70 border-blue-600 text-blue-950 font-bold shadow-md ring-2 ring-blue-500/20"
+                    : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
                 }`}
               >
-                <div className="font-extrabold text-xs">Standard Online Assessment</div>
-                <div className="text-[10px] text-slate-500 mt-0.5">MCQ, MSQ, FIB, Numerical & Descriptive question bank from Excel.</div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-black text-blue-900">Standard Online</span>
+                  <FileText className="h-4 w-4 text-blue-600 shrink-0" />
+                </div>
+                <div className="text-[10px] text-slate-500 leading-normal">MCQ, MSQ, FIB, Numerical & Descriptive Excel question bank.</div>
               </button>
 
               <button
                 type="button"
-                onClick={() => setAssessmentType("coding_hybrid")}
-                className={`p-3 rounded-xl border-2 text-left transition-all ${
-                  assessmentType === "coding_hybrid"
-                    ? "border-purple-600 bg-purple-50/40 text-purple-900 shadow-sm"
-                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                onClick={() => setAssessmentType("online_coding")}
+                className={`p-3.5 rounded-xl border-2 text-left transition-all ${
+                  assessmentType === "online_coding"
+                    ? "bg-emerald-50/70 border-emerald-600 text-emerald-950 font-bold shadow-md ring-2 ring-emerald-500/20"
+                    : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
                 }`}
               >
-                <div className="font-extrabold text-xs">Coding Assessment (Hybrid Set-Wise)</div>
-                <div className="text-[10px] text-slate-500 mt-0.5">Set-wise question papers (Set A, B, C, D). Paper logic + Local IDE code execution.</div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-black text-emerald-900">Online Coding</span>
+                  <Code2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                </div>
+                <div className="text-[10px] text-slate-500 leading-normal">Browser IDE Runner & Open/Hidden Test Cases evaluation.</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAssessmentType("paper_code")}
+                className={`p-3.5 rounded-xl border-2 text-left transition-all ${
+                  assessmentType === "paper_code" || assessmentType === "coding_hybrid"
+                    ? "bg-purple-50/70 border-purple-600 text-purple-950 font-bold shadow-md ring-2 ring-purple-500/20"
+                    : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-black text-purple-900">Paper Code (Hybrid)</span>
+                  <FileSpreadsheet className="h-4 w-4 text-purple-600 shrink-0" />
+                </div>
+                <div className="text-[10px] text-slate-500 leading-normal">Set A/B/C/D Paper Writing & Local IDE Compiler workflow.</div>
               </button>
             </div>
           </div>
 
-          {/* Card 1: Basic Information */}
+          {/* Card 2: Basic Information & Scheduling */}
           <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl space-y-3 text-left">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">1. Basic Details</h3>
+            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">2. Basic Details & Assessment Window</h3>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-700">Exam Title</Label>
                 <Input
-                  placeholder="e.g. Quantitative Aptitude"
+                  placeholder="e.g. Data Structures & Algorithms Placement Assessment"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="bg-white border-slate-200 focus-visible:ring-blue-500 text-sm h-10"
+                  className="bg-white border-slate-200 focus-visible:ring-blue-500 text-xs h-10"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-slate-700">Exam Code</Label>
+                <Label className="text-xs font-bold text-slate-700">Exam Code (Unique Identifier)</Label>
                 <Input
-                  placeholder="e.g. APT2026"
+                  placeholder="e.g. DSA2026"
                   value={code}
                   onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  className="bg-white border-slate-200 focus-visible:ring-blue-500 text-sm h-10 font-mono tracking-wider"
+                  className="bg-white border-slate-200 focus-visible:ring-blue-500 text-xs h-10 font-mono tracking-wider"
                 />
               </div>
             </div>
-          </div>
 
-          {/* Card 2: Scheduling & Timings */}
-          <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl space-y-3 text-left">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">2. Assessment Timings</h3>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-3 pt-1">
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-700">Duration (min)</Label>
-                {assessmentType === "coding_hybrid" ? (
+                {assessmentType === "paper_code" || assessmentType === "coding_hybrid" ? (
                   <div className="h-10 px-3 flex items-center bg-purple-50 border border-purple-200 text-purple-900 rounded-md text-xs font-bold font-mono">
                     Untimed (Examiner Controlled)
                   </div>
@@ -449,33 +573,145 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
             </div>
           </div>
 
-          {/* Card 3: Email Dispatch Policy */}
-          <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl space-y-3 text-left">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">3. Email & Results Dispatch</h3>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-700">Results Delivery Option</Label>
-              <select
-                value={dispatchPolicy}
-                onChange={(e) => setDispatchPolicy(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl border border-slate-250 bg-white text-xs font-bold text-slate-750 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                <option value="none">Don't Send Results (Keep Private)</option>
-                <option value="automatic">Send Automatically after response is submitted</option>
-                <option value="manual">Send Manually from Admin dashboard</option>
-              </select>
+          {/* Card 3: Security & Proctoring Enforcements */}
+          <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl space-y-4 text-left">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                  <Shield className="h-4 w-4 text-blue-600" /> 3. Security & Proctoring Enforcements
+                </h3>
+                <p className="text-[10px] text-slate-500">Configure AI proctoring, browser locks, and violation limits for candidate session monitoring.</p>
+              </div>
+              <span className="text-[10px] bg-blue-100 text-blue-800 font-extrabold px-2 py-0.5 rounded-full">
+                PROCTORING ACTIVE
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {/* Camera Monitoring */}
+              <label className="flex items-start gap-2.5 p-3 rounded-xl border bg-white hover:bg-slate-50 cursor-pointer transition-all">
+                <input
+                  type="checkbox"
+                  checked={cameraMonitor}
+                  onChange={(e) => setCameraMonitor(e.target.checked)}
+                  className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                />
+                <div>
+                  <div className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                    <Camera className="h-3.5 w-3.5 text-blue-600" /> Web Camera Monitoring
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Enforces webcam stream & baseline checks.</p>
+                </div>
+              </label>
+
+              {/* AI Face Detection */}
+              <label className="flex items-start gap-2.5 p-3 rounded-xl border bg-white hover:bg-slate-50 cursor-pointer transition-all">
+                <input
+                  type="checkbox"
+                  checked={aiProctorActive}
+                  onChange={(e) => setAiProctorActive(e.target.checked)}
+                  className="mt-0.5 rounded text-purple-600 focus:ring-purple-500 h-4 w-4"
+                />
+                <div>
+                  <div className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                    <Eye className="h-3.5 w-3.5 text-purple-600" /> AI Face Recognition
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Detects multiple persons or face missing.</p>
+                </div>
+              </label>
+
+              {/* Microphone Monitoring */}
+              <label className="flex items-start gap-2.5 p-3 rounded-xl border bg-white hover:bg-slate-50 cursor-pointer transition-all">
+                <input
+                  type="checkbox"
+                  checked={micMonitor}
+                  onChange={(e) => setMicMonitor(e.target.checked)}
+                  className="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                />
+                <div>
+                  <div className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                    <Mic className="h-3.5 w-3.5 text-indigo-600" /> Audio & Noise Detection
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Flags ambient noise or speech activity.</p>
+                </div>
+              </label>
+
+              {/* Screen Sharing Lock */}
+              <label className="flex items-start gap-2.5 p-3 rounded-xl border bg-white hover:bg-slate-50 cursor-pointer transition-all">
+                <input
+                  type="checkbox"
+                  checked={screenShareMonitor}
+                  onChange={(e) => setScreenShareMonitor(e.target.checked)}
+                  className="mt-0.5 rounded text-amber-600 focus:ring-amber-500 h-4 w-4"
+                />
+                <div>
+                  <div className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                    <Monitor className="h-3.5 w-3.5 text-amber-600" /> Screen Sharing Lock
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Enforces continuous screen stream.</p>
+                </div>
+              </label>
+
+              {/* Tab Switch Tracking */}
+              <label className="flex items-start gap-2.5 p-3 rounded-xl border bg-white hover:bg-slate-50 cursor-pointer transition-all">
+                <input
+                  type="checkbox"
+                  checked={trackTabSwitches}
+                  onChange={(e) => setTrackTabSwitches(e.target.checked)}
+                  className="mt-0.5 rounded text-red-600 focus:ring-red-500 h-4 w-4"
+                />
+                <div>
+                  <div className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                    <Lock className="h-3.5 w-3.5 text-red-600" /> Tab Switch Tracking
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Logs browser tab exits & switches.</p>
+                </div>
+              </label>
+
+              {/* Fullscreen Mode Lock */}
+              <label className="flex items-start gap-2.5 p-3 rounded-xl border bg-white hover:bg-slate-50 cursor-pointer transition-all">
+                <input
+                  type="checkbox"
+                  checked={trackFullScreenExit}
+                  onChange={(e) => setTrackFullScreenExit(e.target.checked)}
+                  className="mt-0.5 rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+                />
+                <div>
+                  <div className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                    <Maximize className="h-3.5 w-3.5 text-emerald-600" /> Fullscreen Enforcement
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Blocks exam view when fullscreen is exited.</p>
+                </div>
+              </label>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200/60">
+              <div>
+                <Label className="text-[10px] font-extrabold text-slate-600 block mb-1">Max Tab Switch Violations Allowed</Label>
+                <Input
+                  type="number"
+                  value={maxTabSwitches}
+                  onChange={(e) => setMaxTabSwitches(parseInt(e.target.value) || 3)}
+                  className="h-8 text-xs bg-white font-bold"
+                />
+              </div>
+              <div>
+                <Label className="text-[10px] font-extrabold text-slate-600 block mb-1">Max Fullscreen Exit Violations Allowed</Label>
+                <Input
+                  type="number"
+                  value={maxFullScreenExits}
+                  onChange={(e) => setMaxFullScreenExits(parseInt(e.target.value) || 3)}
+                  className="h-8 text-xs bg-white font-bold"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Card 4: Security & Proctoring */}
-          <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl text-left">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">4. Security Enforcements</h3>
-          </div>
-
-          {/* Card 5: Questions Import (Standard Mode) */}
+          {/* Card 4: Questions Source Pool (Standard Mode) */}
           {assessmentType === "standard" && (
             <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl space-y-3 text-left">
               <div className="flex justify-between items-center mb-1">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">5. Question Source Pool</h3>
+                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">4. Question Source Pool</h3>
                 <Button
                   type="button"
                   variant="link"
@@ -483,7 +719,7 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
                   className="h-auto p-0 text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1 text-[11px]"
                   onClick={downloadSampleTemplate}
                 >
-                  <FileSpreadsheet className="h-3.5 w-3.5" /> Template
+                  <FileSpreadsheet className="h-3.5 w-3.5" /> Download Excel Template
                 </Button>
               </div>
               <div
@@ -495,7 +731,7 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
                   {file?.name || "Click to upload Excel spreadsheet (.xlsx)"}
                 </p>
                 <p className="text-[10px] text-slate-400 leading-normal max-w-[280px]">
-                  Must define columns: Section, Question, Option A, Option B, Option C, Option D, Correct Answer, Marks, Negative Marks, Code Snippet, Image URL.
+                  Must define columns: Section, Question Type (MCQ/MSQ/FIB/NUM/DES), Question, Option A-D, Correct Answer, Marks, Negative Marks.
                 </p>
 
                 <input
@@ -509,8 +745,261 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
             </div>
           )}
 
-          {/* Card 6: Question Sets Builder (Coding Hybrid Mode) */}
-          {assessmentType === "coding_hybrid" && (
+          {/* Card 4: Set-Wise Online Coding Configurator (Online Coding Mode) */}
+          {assessmentType === "online_coding" && (
+            <div className="p-4 bg-emerald-50/40 border border-emerald-200/60 rounded-xl space-y-4 text-left">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-widest text-emerald-800">4. Set-Wise Online Coding Sets Configurator</h3>
+                  <p className="text-[10px] text-slate-500 font-medium">Create set-wise question papers (Set A, Set B, Set C, Set D...) with problem statements & test cases.</p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    const nextLetter = String.fromCharCode(65 + questionSets.length);
+                    setQuestionSets([
+                      ...questionSets,
+                      {
+                        setName: `Set ${nextLetter}`,
+                        title: `Set ${nextLetter}: Online Coding Problem`,
+                        marks: 100,
+                        paperMaxMarks: 50,
+                        executionMaxMarks: 50,
+                        problemStatement: `Set ${nextLetter}: Given target input data, write an optimal solution.`,
+                        sampleInputOutput: "Input:\nOutput:",
+                        instructions: "1. Write logic on paper.\n2. Execute code in IDE.",
+                        testCases: [
+                          {
+                            input: "Sample Input 1",
+                            expectedOutput: "Sample Output 1",
+                            explanation: "Open Sample Test Case",
+                            isHidden: false,
+                            weightage: 50
+                          },
+                          {
+                            input: "Evaluation Input 2",
+                            expectedOutput: "Evaluation Output 2",
+                            explanation: "Hidden Evaluation Test Case",
+                            isHidden: true,
+                            weightage: 50
+                          }
+                        ],
+                        problems: [
+                          {
+                            title: "Problem 1",
+                            problemStatement: `Set ${nextLetter}: Given target input data, write an optimal solution.`,
+                            sampleInputOutput: "Input:\nOutput:",
+                            instructions: "1. Write logic on paper.\n2. Execute code in IDE."
+                          }
+                        ]
+                      }
+                    ]);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs h-8 px-3 rounded-lg flex items-center gap-1 shadow-sm"
+                >
+                  <Plus className="h-3.5 w-3.5" /> + Add Set
+                </Button>
+              </div>
+
+              {/* SETS LIST */}
+              <div className="space-y-5">
+                {questionSets.map((s, sIdx) => {
+                  const currentTestCases = s.testCases && s.testCases.length > 0 ? s.testCases : [
+                    {
+                      input: "Sample Input 1",
+                      expectedOutput: "Sample Output 1",
+                      explanation: "Open Sample Test Case",
+                      isHidden: false,
+                      weightage: 50
+                    },
+                    {
+                      input: "Evaluation Input 2",
+                      expectedOutput: "Evaluation Output 2",
+                      explanation: "Hidden Evaluation Test Case",
+                      isHidden: true,
+                      weightage: 50
+                    }
+                  ];
+
+                  return (
+                    <div key={sIdx} className="p-4 bg-white border border-emerald-300/80 rounded-2xl space-y-3.5 shadow-sm text-left relative">
+                      <div className="flex items-center justify-between border-b pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-emerald-950 bg-emerald-100 border border-emerald-300 px-3 py-1 rounded-lg">
+                            {s.setName}
+                          </span>
+                          <span className="text-[11px] font-bold text-slate-500">
+                            Set #{sIdx + 1} Question Paper
+                          </span>
+                        </div>
+
+                        {questionSets.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setQuestionSets(questionSets.filter((_, i) => i !== sIdx))}
+                            className="text-red-500 hover:text-red-700 text-xs font-extrabold flex items-center gap-1 bg-red-50 hover:bg-red-100 px-2 py-1 rounded-md border border-red-200"
+                          >
+                            Remove {s.setName}
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="col-span-2">
+                          <Label className="text-[11px] font-extrabold text-slate-700 block mb-1">Problem Title</Label>
+                          <Input
+                            placeholder={`e.g. ${s.setName}: Problem Title`}
+                            value={s.title || `Set ${s.setName}: Coding Problem`}
+                            onChange={(e) => {
+                              const updated = [...questionSets];
+                              updated[sIdx].title = e.target.value;
+                              setQuestionSets(updated);
+                            }}
+                            className="h-9 text-xs bg-slate-50 font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-[11px] font-extrabold text-slate-700 block mb-1">Total Problem Marks</Label>
+                          <Input
+                            type="number"
+                            value={s.marks || 100}
+                            onChange={(e) => {
+                              const updated = [...questionSets];
+                              updated[sIdx].marks = parseInt(e.target.value) || 100;
+                              setQuestionSets(updated);
+                            }}
+                            className="h-9 text-xs bg-slate-50 font-bold"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <Label className="text-[11px] font-extrabold text-slate-700 block mb-1">Problem Statement & Constraints</Label>
+                        <textarea
+                          placeholder="Enter detailed problem statement, input format, output format, and constraints..."
+                          value={s.problemStatement || ""}
+                          onChange={(e) => {
+                            const updated = [...questionSets];
+                            updated[sIdx].problemStatement = e.target.value;
+                            setQuestionSets(updated);
+                          }}
+                          rows={3}
+                          className="w-full p-2.5 rounded-lg border border-slate-200 text-xs bg-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                        />
+                      </div>
+
+                      {/* TEST CASES LIST FOR THIS SET */}
+                      <div className="pt-2 border-t border-slate-100 space-y-2.5">
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                          <span>{s.setName} Test Cases ({currentTestCases.length})</span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => {
+                              const updated = [...questionSets];
+                              if (!updated[sIdx].testCases) updated[sIdx].testCases = [...currentTestCases];
+                              updated[sIdx].testCases.push({
+                                input: "Sample Input",
+                                expectedOutput: "Sample Output",
+                                explanation: "Evaluation Case",
+                                isHidden: false,
+                                weightage: 25
+                              });
+                              setQuestionSets(updated);
+                            }}
+                            className="bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 font-extrabold text-[10px] h-7 px-2.5 rounded"
+                          >
+                            + Add Test Case to {s.setName}
+                          </Button>
+                        </div>
+
+                        {currentTestCases.map((tc: any, tcIdx: number) => (
+                          <div key={tcIdx} className={`p-3 rounded-xl border space-y-2 text-xs transition-all ${
+                            tc.isHidden ? "bg-amber-50/50 border-amber-200" : "bg-emerald-50/50 border-emerald-200"
+                          }`}>
+                            <div className="flex items-center justify-between border-b pb-1.5">
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded ${
+                                tc.isHidden ? "bg-amber-100 text-amber-900 border border-amber-300" : "bg-emerald-100 text-emerald-900 border border-emerald-300"
+                              }`}>
+                                {tc.isHidden ? `🔒 Hidden Case #${tcIdx + 1}` : `🌐 Open Case #${tcIdx + 1}`}
+                              </span>
+
+                              <div className="flex items-center gap-3">
+                                <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={tc.isHidden}
+                                    onChange={(e) => {
+                                      const updated = [...questionSets];
+                                      if (!updated[sIdx].testCases) updated[sIdx].testCases = [...currentTestCases];
+                                      updated[sIdx].testCases[tcIdx].isHidden = e.target.checked;
+                                      setQuestionSets(updated);
+                                    }}
+                                    className="rounded text-amber-600 focus:ring-amber-500 h-3.5 w-3.5"
+                                  />
+                                  Hidden Evaluation Case
+                                </label>
+
+                                {currentTestCases.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = [...questionSets];
+                                      if (!updated[sIdx].testCases) updated[sIdx].testCases = [...currentTestCases];
+                                      updated[sIdx].testCases = updated[sIdx].testCases.filter((_: any, i: number) => i !== tcIdx);
+                                      setQuestionSets(updated);
+                                    }}
+                                    className="text-red-500 hover:text-red-700 text-[10px] font-bold"
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2.5">
+                              <div>
+                                <Label className="text-[10px] font-bold text-slate-600 block mb-0.5">Input (Stdin)</Label>
+                                <textarea
+                                  value={tc.input}
+                                  onChange={(e) => {
+                                    const updated = [...questionSets];
+                                    if (!updated[sIdx].testCases) updated[sIdx].testCases = [...currentTestCases];
+                                    updated[sIdx].testCases[tcIdx].input = e.target.value;
+                                    setQuestionSets(updated);
+                                  }}
+                                  rows={2}
+                                  className="w-full p-2 rounded-lg border border-slate-200 font-mono text-[11px] bg-white"
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-[10px] font-bold text-slate-600 block mb-0.5">Expected Output (Stdout)</Label>
+                                <textarea
+                                  value={tc.expectedOutput}
+                                  onChange={(e) => {
+                                    const updated = [...questionSets];
+                                    if (!updated[sIdx].testCases) updated[sIdx].testCases = [...currentTestCases];
+                                    updated[sIdx].testCases[tcIdx].expectedOutput = e.target.value;
+                                    setQuestionSets(updated);
+                                  }}
+                                  rows={2}
+                                  className="w-full p-2 rounded-lg border border-slate-200 font-mono text-[11px] bg-white"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Card 4: Question Sets Builder (Paper Code Hybrid Mode) */}
+          {(assessmentType === "paper_code" || assessmentType === "coding_hybrid") && (
             <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl space-y-4 text-left">
               <div className="flex justify-between items-center">
                 <div>

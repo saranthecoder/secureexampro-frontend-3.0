@@ -1,21 +1,46 @@
 export interface User {
-  id: string;
+  id?: string;
+  _id?: string;
   name: string;
   email: string;
-  role: 'admin' | 'student';
+  role: 'admin' | 'examiner' | 'student';
   rollNumber?: string;
+  registerId?: string;
+  pin?: string;
+  isPinUpdated?: boolean;
+  createdBy?: string;
   loginTimestamp?: number;
+}
+
+export interface TestCase {
+  id?: string;
+  input: string;
+  expectedOutput: string;
+  explanation?: string;
+  isHidden: boolean;
+  weightage?: number;
+}
+
+export interface StarterTemplates {
+  java?: string;
+  python?: string;
+  cpp?: string;
+  c?: string;
+  javascript?: string;
 }
 
 export interface Question {
   id: string;
   question: string;
-  optionA: string;
-  optionB: string;
-  optionC: string;
-  optionD: string;
-  correctAnswer: string;
+  optionA?: string;
+  optionB?: string;
+  optionC?: string;
+  optionD?: string;
+  correctAnswer?: string;
   marks: number;
+  questionType?: 'MCQ' | 'MSQ' | 'FIB' | 'NUM' | 'DES' | 'CODING';
+  starterTemplates?: StarterTemplates;
+  testCases?: TestCase[];
 }
 
 export interface Exam {
@@ -28,6 +53,9 @@ export interface Exam {
   endTime: string;
   questions: Question[];
   status: 'upcoming' | 'active' | 'completed';
+  assessmentType?: 'standard' | 'online_coding' | 'paper_code' | 'coding_hybrid';
+  createdBy?: string;
+  isResultReleased?: boolean;
 }
 
 export interface ExamResult {

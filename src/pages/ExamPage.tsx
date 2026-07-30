@@ -30,6 +30,7 @@ import {
   X,
   Zap
 } from "lucide-react";
+import Editor from "@monaco-editor/react";
 import BASE_URL from "@/config/api";
 
 function getGoogleDriveEmbedUrl(url: string): string {
@@ -69,13 +70,13 @@ const ExamPage = () => {
   const [submitLoaderMessage, setSubmitLoaderMessage] = useState("");
   const submitLock = useRef(false);
 
-  // Stagger delay for exam submission (0–15s, shorter than login queues)
+  // Stagger delay for exam submission (0–5s max in all cases)
   const getSubmitStaggerDelay = (emailStr: string) => {
     let hash = 0;
     for (let i = 0; i < emailStr.length; i++) {
       hash = emailStr.charCodeAt(i) + ((hash << 5) - hash);
     }
-    return Math.abs(hash) % 15;
+    return Math.min(5, Math.abs(hash) % 6);
   };
   const [showConfirm, setShowConfirm] = useState(false);
   const [started, setStarted] = useState(false);
@@ -111,6 +112,49 @@ const ExamPage = () => {
   const [assignedSet, setAssignedSet] = useState("");
   const [codingPhase, setCodingPhase] = useState("lobby");
   const [allowLocalIdeSwitch, setAllowLocalIdeSwitch] = useState(false);
+
+  // Online Coding IDE States
+  const [codingLang, setCodingLang] = useState("python");
+  const [languageCodeMap, setLanguageCodeMap] = useState<Record<string, string>>({});
+  const [activeTestTab, setActiveTestTab] = useState(0);
+  const [codeRunning, setCodeRunning] = useState(false);
+  const [codeOutput, setCodeOutput] = useState<{ passed: boolean; output: string; error?: string } | null>(null);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(45); // percentage
+  const [terminalHeight, setTerminalHeight] = useState(38); // percentage for bottom terminal
+  const isDragging = useRef(false);
+  const isVerticalDragging = useRef(false);
+
+  // Load per-language codes & selected language from localStorage on exam load
+  useEffect(() => {
+    const parsedUser = JSON.parse(localStorage.getItem("user") || "{}");
+    if (exam?.examCode && parsedUser?.email) {
+      try {
+        const savedMap = localStorage.getItem(`code_map_${exam.examCode}_${parsedUser.email}`);
+        if (savedMap) {
+          setLanguageCodeMap(JSON.parse(savedMap));
+        }
+        const savedLang = localStorage.getItem(`lang_${exam.examCode}_${parsedUser.email}`);
+        if (savedLang) {
+          setCodingLang(savedLang);
+        }
+      } catch (e) {}
+    }
+  }, [exam?.examCode]);
+
+  // Terminal / Console states
+  const [terminalMode, setTerminalMode] = useState<"terminal" | "testcases">("terminal");
+  const [terminalLogs, setTerminalLogs] = useState<{ type: "stdout" | "stderr" | "info" | "success" | "error"; text: string; ts: number }[]>([]);
+  const [customInput, setCustomInput] = useState("");
+  const [testCaseResults, setTestCaseResults] = useState<any[] | null>(null);
+  const [testCaseSummary, setTestCaseSummary] = useState<{ total: number; passed: number } | null>(null);
+
+  const terminalEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (terminalMode === "terminal") {
+      terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [terminalLogs, terminalMode]);
 
   // =======================
   // 🔐 SECURITY HOOK (Tab switches & Fullscreen, max warnings: 3)
@@ -981,12 +1025,17 @@ const ExamPage = () => {
   }, [started, submitted, cameraRequired, stream, captureFrameAndAnalyze, allowLocalIdeSwitch]);
 
   // Run active candidate heartbeat loop
-  // - For coding_hybrid: runs from lobby (to poll set assignment) and during exam
-  // - For standard: runs only after exam has started (preserving original behavior)
+  // - For set-based exams (online_coding, paper_code, coding_hybrid): runs from lobby (to poll set assignment) and during exam
+  // - For standard: runs after start or if waiting for set allocation
   useEffect(() => {
     if (submitted || isTerminatedByAdmin) return;
-    // For standard exams, only run heartbeat after exam has started
-    if (exam?.assessmentType !== "coding_hybrid" && !started) return;
+    const isSetBased =
+      exam?.assessmentType === "coding_hybrid" ||
+      exam?.assessmentType === "paper_code" ||
+      exam?.assessmentType === "online_coding" ||
+      (exam?.questionSets && exam?.questionSets.length > 0);
+
+    if (!started && !isSetBased) return;
 
     const sendHeartbeat = async () => {
       try {
@@ -1446,8 +1495,8 @@ const ExamPage = () => {
   // =======================
   if (!started) {
     if (exam && exam.inWaitingLobby) {
-      const waitTime = staggerTime !== null ? staggerTime : exam.waitTimeRemaining || 20;
-      const totalWaitTime = initialStaggerWaitTime.current || exam.waitTimeRemaining || 20;
+      const waitTime = Math.min(5, staggerTime !== null ? staggerTime : (exam.waitTimeRemaining || 5));
+      const totalWaitTime = Math.min(5, initialStaggerWaitTime.current || exam.waitTimeRemaining || 5);
       const progressPercent = ((totalWaitTime - waitTime) / totalWaitTime) * 100;
 
       // SVG countdown ring
@@ -1580,23 +1629,25 @@ const ExamPage = () => {
         };
       }
 
-      // 5. Question Set Assignment check for Coding Hybrid assessments
-      if (exam?.assessmentType === "coding_hybrid" && !assignedSet) {
+      // 5. Question Set Assignment check for Set-based assessments (Online Coding, Paper Code, Coding Hybrid)
+      const isSetBasedAssessment = exam?.assessmentType === "coding_hybrid" || exam?.assessmentType === "paper_code" || exam?.assessmentType === "online_coding";
+
+      if (isSetBasedAssessment && !assignedSet) {
         return {
           text: "Waiting for Examiner to Assign Question Paper Set...",
           disabled: true,
-          className: "bg-purple-100 text-purple-700 border border-purple-300 font-extrabold cursor-not-allowed",
+          className: "bg-amber-100 text-amber-900 border border-amber-300 font-extrabold cursor-not-allowed animate-pulse",
           onClick: () => {}
         };
       }
 
       // 6. Ready to start
       return {
-        text: exam?.assessmentType === "coding_hybrid"
-          ? `Open Question Paper & Begin Exam (${assignedSet})`
+        text: isSetBasedAssessment
+          ? `Open Question Paper & Begin Coding Test (${assignedSet})`
           : "Enter Examination Fullscreen",
         disabled: false,
-        className: "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer shadow-lg hover:shadow-blue-500/25",
+        className: "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer shadow-lg hover:shadow-blue-500/25 font-bold",
         onClick: handleStart
       };
     })();
@@ -2092,7 +2143,7 @@ const ExamPage = () => {
   // ACTIVE EXAM
   // =======================
   return (
-    <div className="min-h-screen bg-[#f3f4f6] relative font-roboto select-none">
+    <div className={exam?.assessmentType === "online_coding" ? "h-screen max-h-screen overflow-hidden flex flex-col bg-[#1e1e1e] relative font-roboto select-none" : "min-h-screen bg-[#f3f4f6] relative font-roboto select-none"}>
       {/* OFFLINE STATUS BANNER */}
       {!isOnline && !allowLocalIdeSwitch && (
         <div className="sticky top-0 z-[100] bg-amber-600 text-white text-xs font-bold py-2.5 px-4 text-center flex items-center justify-center gap-2 shadow-md animate-pulse">
@@ -2192,16 +2243,23 @@ const ExamPage = () => {
       )}
 
       {/* HEADER */}
-      <header className="sticky top-0 z-40 bg-[#0b3d91] text-white border-b shadow-md font-roboto">
-        <div className="max-w-7xl mx-auto px-6 py-3.5 flex justify-between items-center">
+      <header className={`sticky top-0 z-40 border-b shadow-md font-roboto ${exam?.assessmentType === "online_coding" ? "bg-[#1a1a2e] text-white" : "bg-[#0b3d91] text-white"}`}>
+        <div className={`px-6 py-2.5 flex justify-between items-center ${exam?.assessmentType === "online_coding" ? "" : "max-w-7xl mx-auto py-3.5"}`}>
           {/* LEFT */}
-          <div>
-            <h1 className="text-lg font-bold tracking-wide uppercase">
-              SecureExam Pro - Placement Assessment
-            </h1>
-            <p className="text-[10px] opacity-75 uppercase tracking-wider font-semibold">
-              Powering National Qualifier Drives | Under SR Ecosystem
-            </p>
+          <div className="flex items-center gap-3">
+            {exam?.assessmentType === "online_coding" && (
+              <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center mr-1">
+                <span className="text-white text-sm font-black">{"</>"}</span>
+              </div>
+            )}
+            <div>
+              <h1 className={`font-bold tracking-wide uppercase ${exam?.assessmentType === "online_coding" ? "text-base" : "text-lg"}`}>
+                {exam?.assessmentType === "online_coding" ? "SecureExam Pro — Online Coding" : "SecureExam Pro - Placement Assessment"}
+              </h1>
+              <p className="text-[10px] opacity-75 uppercase tracking-wider font-semibold">
+                {exam?.assessmentType === "online_coding" ? "Competitive Coding Assessment Platform | SR Ecosystem" : "Powering National Qualifier Drives | Under SR Ecosystem"}
+              </p>
+            </div>
           </div>
 
           {/* TIMER — Hidden for Coding Hybrid */}
@@ -2210,7 +2268,9 @@ const ExamPage = () => {
               className={`px-4 py-1.5 rounded text-sm font-semibold flex items-center gap-2 ${
                 timer.isLow
                   ? "bg-red-500 text-white animate-pulse shadow"
-                  : "bg-white/10 text-white border border-white/20"
+                  : exam?.assessmentType === "online_coding"
+                    ? "bg-white/5 text-white border border-white/10"
+                    : "bg-white/10 text-white border border-white/20"
               }`}
             >
               <Clock className="h-4 w-4" />
@@ -2218,8 +2278,8 @@ const ExamPage = () => {
             </div>
           )}
 
-          {/* SUBMIT — Hidden for Coding Hybrid */}
-          {exam?.assessmentType !== "coding_hybrid" && (
+          {/* SUBMIT — Hidden for Coding Hybrid AND Online Coding (IDE has its own) */}
+          {exam?.assessmentType !== "coding_hybrid" && exam?.assessmentType !== "online_coding" && (
             <Button
               onClick={() => setShowConfirm(true)}
               className="bg-red-600 hover:bg-red-700 text-white font-semibold text-xs py-1.5 h-auto uppercase tracking-wider"
@@ -2231,6 +2291,561 @@ const ExamPage = () => {
         </div>
       </header>
 
+      {/* CONDITIONAL: Online Coding IDE vs Standard MCQ Layout */}
+      {exam?.assessmentType === "online_coding" ? (() => {
+        const activeSetObj = exam?.questionSets?.find((qs: any) => qs.setName === assignedSet);
+        const problemTitle = activeSetObj?.title || exam?.questions?.[0]?.question || "Coding Problem";
+        const problemDesc = activeSetObj?.problemStatement || exam?.questions?.[0]?.question || "";
+        const testCases = activeSetObj?.testCases || exam?.questions?.[0]?.testCases || [];
+        const constraints = activeSetObj?.constraints || "";
+        const examples = activeSetObj?.examples || [];
+        const currentQ = exam?.questions?.[0];
+        const targetQId = currentQ?._id || activeSetObj?._id || "online_coding_q1";
+        const savedAnswerObj = answers.find((a: any) => a.questionId === targetQId || a.questionId === "online_coding_q1" || (currentQ?._id && a.questionId === currentQ._id));
+
+        const langMap: Record<string, string> = {
+          python: "python",
+          java: "java",
+          cpp: "cpp",
+          c: "c",
+          javascript: "javascript",
+        };
+
+        const starterTemplates = activeSetObj?.starterTemplates || {};
+        const defaultCode: Record<string, string> = {
+          python: starterTemplates?.python || `# Write your solution here\ndef solution():\n    print("Hello World")\n\nsolution()`,
+          java: starterTemplates?.java || `// Write your solution here\nimport java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        System.out.println("Hello World");\n    }\n}`,
+          cpp: starterTemplates?.cpp || `// Write your solution here\n#include <iostream>\n#include <vector>\n#include <string>\n#include <algorithm>\nusing namespace std;\n\nint main() {\n    cout << "Hello World" << endl;\n    return 0;\n}`,
+          c: starterTemplates?.c || `// Write your solution here\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n\nint main() {\n    printf("Hello World\\n");\n    return 0;\n}`,
+          javascript: starterTemplates?.javascript || `// Write your solution here\nfunction solution() {\n    console.log("Hello World");\n}\n\nsolution();`,
+        };
+
+        const getCodeForLang = (lang: string) => {
+          if (languageCodeMap[lang] !== undefined && languageCodeMap[lang] !== null) {
+            return languageCodeMap[lang];
+          }
+          return defaultCode[lang] || "";
+        };
+
+        const activeCode = getCodeForLang(codingLang);
+
+        const handleCodeChange = (newCode: string, lang = codingLang) => {
+          setLanguageCodeMap((prev) => {
+            const updatedMap = { ...prev, [lang]: newCode };
+            const parsedUser = JSON.parse(localStorage.getItem("user") || "{}");
+            if (exam?.examCode && parsedUser?.email) {
+              try {
+                localStorage.setItem(`code_map_${exam.examCode}_${parsedUser.email}`, JSON.stringify(updatedMap));
+              } catch (e) {}
+            }
+            return updatedMap;
+          });
+
+          setAnswers((prev) => {
+            const existingIndex = prev.findIndex((a: any) => a.questionId === targetQId || a.questionId === "online_coding_q1" || (currentQ?._id && a.questionId === currentQ._id));
+            if (existingIndex >= 0) {
+              const updated = [...prev];
+              updated[existingIndex] = { ...updated[existingIndex], answer: newCode, selectedOption: newCode, language: lang };
+              return updated;
+            } else {
+              return [...prev, { questionId: targetQId, answer: newCode, selectedOption: newCode, language: lang, sectionIndex: 0, questionIndex: 0 }];
+            }
+          });
+        };
+
+        // Run Code (terminal output mode) — calls real backend compiler
+        const handleRunCode = async () => {
+          setCodeRunning(true);
+          setTerminalMode("terminal");
+          setTerminalLogs(prev => [...prev, { type: "info", text: `▶ Running ${codingLang.toUpperCase()} code...`, ts: Date.now() }]);
+          try {
+            const resp = await fetch(`${BASE_URL}/exam/execute-code`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ language: codingLang, code: activeCode, input: customInput, runOnly: true }),
+            });
+
+            if (!resp.ok) {
+              const text = await resp.text();
+              let errMsg = `Server error (Status ${resp.status})`;
+              try {
+                const errJson = JSON.parse(text);
+                if (errJson.error) errMsg = errJson.error;
+              } catch (e) {}
+              setTerminalLogs(prev => [...prev, { type: "error", text: `Execution error: ${errMsg}`, ts: Date.now() }]);
+              setCodeRunning(false);
+              return;
+            }
+
+            const data = await resp.json();
+            if (data.error && !data.success) {
+              setTerminalLogs(prev => [...prev, { type: "error", errorType: data.errorType, text: data.error, ts: Date.now() }]);
+            } else {
+              if (data.error) {
+                setTerminalLogs(prev => [...prev, { type: "stderr", errorType: data.errorType, text: data.error, ts: Date.now() }]);
+              }
+              if (data.output) {
+                setTerminalLogs(prev => [...prev, { type: "stdout", text: data.output, ts: Date.now() }]);
+              }
+              if (!data.output && !data.error) {
+                setTerminalLogs(prev => [...prev, { type: "info", text: "(No output)", ts: Date.now() }]);
+              }
+              if (data.exitSuccess) {
+                setTerminalLogs(prev => [...prev, { type: "success", text: "✓ Process exited with code 0", ts: Date.now() }]);
+              } else if (!data.error) {
+                setTerminalLogs(prev => [...prev, { type: "error", text: "✗ Process exited with non-zero code", ts: Date.now() }]);
+              }
+            }
+          } catch (err: any) {
+            setTerminalLogs(prev => [...prev, { type: "error", text: `Network error: ${err.message}`, ts: Date.now() }]);
+          }
+          setCodeRunning(false);
+        };
+
+        // Run against test cases
+        const handleRunTests = async () => {
+          setCodeRunning(true);
+          setTerminalMode("testcases");
+          setTestCaseResults(null);
+          setTestCaseSummary(null);
+          setTerminalLogs(prev => [...prev, { type: "info", text: `▶ Running against ${testCases.filter((tc: any) => !tc.isHidden).length} test case(s)...`, ts: Date.now() }]);
+          try {
+            const resp = await fetch(`${BASE_URL}/exam/execute-code`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ language: codingLang, code: activeCode, testCases, runHidden: false }),
+            });
+
+            if (!resp.ok) {
+              const text = await resp.text();
+              let errMsg = `Server error (Status ${resp.status})`;
+              try {
+                const errJson = JSON.parse(text);
+                if (errJson.error) errMsg = errJson.error;
+              } catch (e) {}
+              setTerminalLogs(prev => [...prev, { type: "error", text: `Execution error: ${errMsg}`, ts: Date.now() }]);
+              setCodeRunning(false);
+              return;
+            }
+
+            const data = await resp.json();
+            if (data.error && !data.success) {
+              setTerminalLogs(prev => [...prev, { type: "error", errorType: data.errorType, text: data.error, ts: Date.now() }]);
+            } else {
+              setTestCaseResults(data.results || []);
+              setTestCaseSummary({ total: data.totalTestCases || 0, passed: data.totalPassed || 0 });
+              const passMsg = data.totalPassed === data.totalTestCases
+                ? `✓ All ${data.totalTestCases} test case(s) passed!`
+                : `✗ ${data.totalPassed}/${data.totalTestCases} test case(s) passed`;
+              setTerminalLogs(prev => [...prev, { type: data.totalPassed === data.totalTestCases ? "success" : "error", text: passMsg, ts: Date.now() }]);
+            }
+          } catch (err: any) {
+            setTerminalLogs(prev => [...prev, { type: "error", text: `Network error: ${err.message}`, ts: Date.now() }]);
+          }
+          setCodeRunning(false);
+        };
+
+        const handleMouseMove = (e: React.MouseEvent) => {
+          const container = e.currentTarget as HTMLElement;
+          const rect = container.getBoundingClientRect();
+          if (isDragging.current) {
+            const newWidth = ((e.clientX - rect.left) / rect.width) * 100;
+            if (newWidth >= 20 && newWidth <= 75) {
+              setLeftPanelWidth(newWidth);
+            }
+          }
+          if (isVerticalDragging.current) {
+            const newHeight = ((rect.bottom - e.clientY) / rect.height) * 100;
+            if (newHeight >= 15 && newHeight <= 75) {
+              setTerminalHeight(newHeight);
+            }
+          }
+        };
+
+        const visibleTestCases = testCases.filter((tc: any) => !tc.isHidden);
+
+        return (
+          <div
+            className="flex flex-1 font-roboto overflow-hidden min-h-0"
+            style={{ height: "calc(100vh - 52px)" }}
+            onMouseMove={handleMouseMove}
+            onMouseUp={() => { isDragging.current = false; isVerticalDragging.current = false; }}
+            onMouseLeave={() => { isDragging.current = false; isVerticalDragging.current = false; }}
+          >
+            {/* LEFT: Problem Description Panel */}
+            <div
+              style={{ width: `${leftPanelWidth}%` }}
+              className="flex flex-col border-r border-slate-700 bg-[#1e1e1e] overflow-hidden"
+            >
+              {/* Problem Header */}
+              <div className="flex items-center gap-0 bg-[#2d2d2d] border-b border-slate-700 px-0">
+                <button className="px-4 py-2.5 text-xs font-bold text-white bg-[#1e1e1e] border-b-2 border-emerald-500">
+                  Description
+                </button>
+              </div>
+
+              {/* Problem Content */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-5 text-sm text-slate-200 custom-scrollbar">
+                {/* Title */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
+                      {assignedSet ? `Set: ${assignedSet}` : "Problem"}
+                    </span>
+                    <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded text-[10px] font-bold">
+                      {activeSetObj?.difficulty || "Medium"}
+                    </span>
+                  </div>
+                  <h2 className="text-xl font-bold text-white leading-tight">{problemTitle}</h2>
+                </div>
+
+                {/* Problem Statement */}
+                <div className="leading-relaxed whitespace-pre-line text-slate-300 text-[13px]">
+                  {problemDesc}
+                </div>
+
+                {/* Examples */}
+                {(examples.length > 0 ? examples : visibleTestCases).map((ex: any, i: number) => (
+                  <div key={i} className="bg-[#2d2d2d] rounded-lg border border-slate-700 overflow-hidden">
+                    <div className="px-3 py-1.5 bg-[#363636] border-b border-slate-700 text-xs font-bold text-slate-300">
+                      Example {i + 1}
+                    </div>
+                    <div className="p-3 space-y-2 font-mono text-xs">
+                      <div>
+                        <span className="text-slate-500 font-bold">Input: </span>
+                        <span className="text-slate-200">{ex.input}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 font-bold">Output: </span>
+                        <span className="text-slate-200">{ex.expectedOutput || ex.output}</span>
+                      </div>
+                      {ex.explanation && (
+                        <div>
+                          <span className="text-slate-500 font-bold">Explanation: </span>
+                          <span className="text-slate-300">{ex.explanation}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Constraints */}
+                {constraints && (
+                  <div>
+                    <h4 className="text-sm font-bold text-white mb-2">Constraints:</h4>
+                    <div className="text-xs text-slate-400 font-mono whitespace-pre-line bg-[#2d2d2d] rounded-lg p-3 border border-slate-700">
+                      {constraints}
+                    </div>
+                  </div>
+                )}
+
+                {/* Marks Info */}
+                <div className="flex items-center gap-3 pt-2 border-t border-slate-700">
+                  <span className="text-[11px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2.5 py-1 rounded font-bold">
+                    Total Marks: {activeSetObj?.marks || currentQ?.marks || 100}
+                  </span>
+                  <span className="text-[11px] bg-purple-500/20 text-purple-400 border border-purple-500/30 px-2.5 py-1 rounded font-bold">
+                    Test Cases: {testCases.length}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Resizable Divider */}
+            <div
+              className="w-1.5 bg-slate-700 hover:bg-emerald-500 cursor-col-resize transition-colors flex-shrink-0 relative group"
+              onMouseDown={() => { isDragging.current = true; }}
+            >
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-8 rounded-full bg-slate-500 group-hover:bg-emerald-400 transition-colors" />
+            </div>
+
+            {/* RIGHT: Code Editor + Terminal */}
+            <div
+              style={{ width: `${100 - leftPanelWidth}%` }}
+              className="flex flex-col bg-[#1e1e1e] overflow-hidden"
+              onCopy={(e) => e.preventDefault()}
+              onPaste={(e) => e.preventDefault()}
+              onCut={(e) => e.preventDefault()}
+            >
+              {/* Editor Header Bar */}
+              <div className="flex items-center justify-between bg-[#2d2d2d] border-b border-slate-700 px-3 py-1.5">
+                <div className="flex items-center gap-2">
+                  {/* Language Selector */}
+                  <select
+                    value={codingLang}
+                    onChange={(e) => {
+                      const newLang = e.target.value;
+                      setCodingLang(newLang);
+                      const parsedUser = JSON.parse(localStorage.getItem("user") || "{}");
+                      if (exam?.examCode && parsedUser?.email) {
+                        try {
+                          localStorage.setItem(`lang_${exam.examCode}_${parsedUser.email}`, newLang);
+                        } catch (err) {}
+                      }
+                      if (languageCodeMap[newLang] === undefined) {
+                        handleCodeChange(defaultCode[newLang] || "", newLang);
+                      }
+                    }}
+                    className="bg-[#3c3c3c] text-white text-xs font-semibold border border-slate-600 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+                  >
+                    <option value="python">Python 3</option>
+                    <option value="java">Java</option>
+                    <option value="cpp">C++</option>
+                    <option value="c">C</option>
+                    <option value="javascript">JavaScript</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 font-mono bg-[#3c3c3c] px-2 py-0.5 rounded border border-slate-600">
+                    AUTO-SAVED
+                  </span>
+                </div>
+              </div>
+
+              {/* Monaco Code Editor */}
+              <div className="flex-1 min-h-0">
+                <Editor
+                  height="100%"
+                  language={langMap[codingLang] || "python"}
+                  theme="vs-dark"
+                  value={activeCode}
+                  onChange={(value) => {
+                    handleCodeChange(value || "");
+                  }}
+                  onMount={(editor) => {
+                    // Disable copy, paste, cut
+                    editor.addCommand(
+                      // eslint-disable-next-line no-bitwise
+                      (window as any).monaco?.KeyMod?.CtrlCmd | (window as any).monaco?.KeyCode?.KeyC,
+                      () => {} // Block Ctrl+C / Cmd+C
+                    );
+                    editor.addCommand(
+                      // eslint-disable-next-line no-bitwise
+                      (window as any).monaco?.KeyMod?.CtrlCmd | (window as any).monaco?.KeyCode?.KeyV,
+                      () => {} // Block Ctrl+V / Cmd+V
+                    );
+                    editor.addCommand(
+                      // eslint-disable-next-line no-bitwise
+                      (window as any).monaco?.KeyMod?.CtrlCmd | (window as any).monaco?.KeyCode?.KeyX,
+                      () => {} // Block Ctrl+X / Cmd+X
+                    );
+                    // Disable right-click context menu
+                    editor.onContextMenu((e: any) => {
+                      e.event?.preventDefault?.();
+                      e.event?.stopPropagation?.();
+                    });
+                  }}
+                  options={{
+                    fontSize: 14,
+                    fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    automaticLayout: true,
+                    tabSize: 4,
+                    wordWrap: "on",
+                    lineNumbers: "on",
+                    renderLineHighlight: "all",
+                    bracketPairColorization: { enabled: true },
+                    padding: { top: 12 },
+                    suggestOnTriggerCharacters: true,
+                    quickSuggestions: true,
+                    smoothScrolling: true,
+                    cursorBlinking: "smooth",
+                    cursorSmoothCaretAnimation: "on",
+                    contextmenu: false,
+                    copyWithSyntaxHighlighting: false,
+                  }}
+                />
+              </div>
+
+              {/* Resizable Horizontal Divider between Editor and Terminal */}
+              <div
+                className="h-1.5 bg-[#2d2d2d] hover:bg-emerald-500 cursor-row-resize transition-colors flex-shrink-0 relative group border-t border-b border-slate-700 select-none"
+                onMouseDown={() => { isVerticalDragging.current = true; }}
+                title="Drag to resize terminal height"
+              >
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-1 w-8 rounded-full bg-slate-500 group-hover:bg-emerald-300 transition-colors" />
+              </div>
+
+              {/* Bottom: Terminal / Console Panel */}
+              <div className="bg-[#0d1117] flex flex-col flex-shrink-0 min-h-0" style={{ height: `${terminalHeight}%` }}>
+                {/* Terminal Header */}
+                <div className="flex items-center justify-between bg-[#161b22] border-b border-slate-700 px-3 py-1">
+                  <div className="flex items-center gap-0">
+                    <button
+                      className={`px-3 py-1.5 text-xs font-bold border-b-2 transition-colors ${
+                        terminalMode === "terminal" ? "text-white border-emerald-500" : "text-slate-400 border-transparent hover:text-white"
+                      }`}
+                      onClick={() => setTerminalMode("terminal")}
+                    >
+                      Terminal
+                    </button>
+                    <button
+                      className={`px-3 py-1.5 text-xs font-bold border-b-2 transition-colors ${
+                        terminalMode === "testcases" ? "text-white border-emerald-500" : "text-slate-400 border-transparent hover:text-white"
+                      }`}
+                      onClick={() => setTerminalMode("testcases")}
+                    >
+                      Test Cases {testCaseSummary ? `(${testCaseSummary.passed}/${testCaseSummary.total})` : ""}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      onClick={handleRunCode}
+                      disabled={codeRunning}
+                      className="bg-transparent hover:bg-[#21262d] text-emerald-400 border border-slate-600 text-[11px] font-bold px-2.5 py-0.5 h-6 rounded"
+                    >
+                      {codeRunning ? (
+                        <><RefreshCw className="h-3 w-3 mr-1 animate-spin" /> Running...</>
+                      ) : (
+                        <><Play className="h-3 w-3 mr-1" /> Run</>
+                      )}
+                    </Button>
+                    <Button
+                      onClick={handleRunTests}
+                      disabled={codeRunning}
+                      className="bg-transparent hover:bg-[#21262d] text-amber-400 border border-slate-600 text-[11px] font-bold px-2.5 py-0.5 h-6 rounded"
+                    >
+                      <CheckCircle2 className="h-3 w-3 mr-1" /> Test
+                    </Button>
+                    <Button
+                      onClick={() => setShowConfirm(true)}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-0.5 h-6 rounded"
+                    >
+                      <Send className="h-3 w-3 mr-1" /> Submit
+                    </Button>
+                    <button
+                      onClick={() => { setTerminalLogs([]); setTestCaseResults(null); setTestCaseSummary(null); }}
+                      className="text-slate-500 hover:text-white text-[10px] px-1.5 py-0.5 rounded hover:bg-[#21262d] transition-colors"
+                      title="Clear terminal"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                {/* Terminal Content */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                  {terminalMode === "terminal" ? (
+                    <div className="flex flex-col h-full">
+                      {/* Custom Input */}
+                      <div className="border-b border-slate-800 px-3 py-1.5 flex items-center gap-2 bg-[#0d1117]">
+                        <span className="text-[10px] text-slate-500 font-bold uppercase shrink-0">stdin:</span>
+                        <input
+                          value={customInput}
+                          onChange={(e) => setCustomInput(e.target.value)}
+                          placeholder="Custom input (optional)"
+                          className="flex-1 bg-transparent text-xs font-mono text-slate-300 outline-none placeholder-slate-600 border-none"
+                        />
+                      </div>
+                      {/* Terminal Output */}
+                      <div className="flex-1 overflow-y-auto px-3 py-2 font-mono text-xs space-y-0.5 custom-scrollbar">
+                        {terminalLogs.length === 0 ? (
+                          <div className="text-slate-600 text-xs py-4 text-center">
+                            Click <span className="text-emerald-500 font-bold">Run</span> to execute your code or <span className="text-amber-500 font-bold">Test</span> to check against test cases
+                          </div>
+                        ) : (
+                          terminalLogs.map((log: any, i: number) => (
+                            <div key={i} className="mb-1">
+                              {log.errorType && (
+                                <div className="text-red-400 font-bold text-[11px] my-1 flex items-center gap-1">
+                                  <span className="bg-red-950/80 text-red-400 border border-red-700/60 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">
+                                    🔴 {log.errorType}
+                                  </span>
+                                </div>
+                              )}
+                              <pre
+                                className={`whitespace-pre-wrap leading-relaxed ${
+                                  log.type === "stdout" ? "text-slate-200" :
+                                  log.type === "stderr" ? "text-red-400" :
+                                  log.type === "error" ? "text-red-400 font-semibold" :
+                                  log.type === "success" ? "text-emerald-400 font-bold" :
+                                  "text-blue-400"
+                                }`}
+                              >
+                                {log.text}
+                              </pre>
+                            </div>
+                          ))
+                        )}
+                        <div ref={terminalEndRef} />
+                      </div>
+                    </div>
+                  ) : (
+                    /* Test Cases Results View */
+                    <div className="px-3 py-2 space-y-2">
+                      {!testCaseResults ? (
+                        <div className="text-slate-600 text-xs py-4 text-center">
+                          Click <span className="text-amber-500 font-bold">Test</span> to run your code against test cases
+                        </div>
+                      ) : (
+                        <>
+                          {/* Summary */}
+                          {testCaseSummary && (
+                            <div className={`flex items-center gap-2 text-sm font-bold px-1 py-1 ${
+                              testCaseSummary.passed === testCaseSummary.total ? "text-emerald-400" : "text-red-400"
+                            }`}>
+                              {testCaseSummary.passed === testCaseSummary.total ? (
+                                <><CheckCircle2 className="h-4 w-4" /> All Test Cases Passed</>
+                              ) : (
+                                <><AlertCircle className="h-4 w-4" /> {testCaseSummary.passed}/{testCaseSummary.total} Passed</>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Individual Results */}
+                          {testCaseResults.map((tc: any, i: number) => (
+                            <div key={i} className={`rounded-lg border p-2.5 text-xs space-y-1.5 ${
+                              tc.passed
+                                ? "bg-emerald-950/30 border-emerald-800"
+                                : "bg-red-950/30 border-red-800"
+                            }`}>
+                              <div className="flex items-center justify-between">
+                                <span className={`font-bold ${tc.passed ? "text-emerald-400" : "text-red-400"}`}>
+                                  {tc.passed ? "✓" : "✗"} Test Case #{tc.testCaseIndex} {tc.isHidden ? "(Hidden)" : ""}
+                                </span>
+                              </div>
+                              {!tc.isHidden && (
+                                <div className="grid grid-cols-1 gap-1.5 font-mono text-[11px]">
+                                  <div className="bg-black/30 rounded p-2">
+                                    <span className="text-slate-500 font-bold">Input: </span>
+                                    <span className="text-slate-300">{tc.input}</span>
+                                  </div>
+                                  <div className="bg-black/30 rounded p-2">
+                                    <span className="text-slate-500 font-bold">Expected: </span>
+                                    <span className="text-slate-300">{tc.expectedOutput}</span>
+                                  </div>
+                                  <div className="bg-black/30 rounded p-2">
+                                    <span className="text-slate-500 font-bold">Got: </span>
+                                    <span className={tc.passed ? "text-emerald-300" : "text-red-300"}>{tc.actualOutput}</span>
+                                  </div>
+                                  {tc.error && (
+                                    <div className="bg-red-950/50 rounded p-2 text-red-300">
+                                      <span className="text-red-500 font-bold">Error: </span>{tc.error}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+
+                          {testCases.filter((tc: any) => tc.isHidden).length > 0 && (
+                            <div className="flex items-center gap-1.5 text-[10px] text-amber-400 font-semibold mt-1">
+                              <Shield className="h-3 w-3" />
+                              +{testCases.filter((tc: any) => tc.isHidden).length} hidden test case(s) evaluated upon final submission
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })() : (
+      <>
       {/* MNC PLACEMENT DRIVE WORKSPACE */}
       <div className="max-w-7xl mx-auto flex gap-6 px-6 py-6 font-roboto relative">
         {/* LEFT COLUMN: QUESTION PANEL */}
@@ -2558,6 +3173,71 @@ const ExamPage = () => {
                     );
                   }
 
+                  if (qType === "CODING" || exam?.assessmentType === "online_coding") {
+                    const activeSetObj = exam?.questionSets?.find((qs: any) => qs.setName === assignedSet) || currentQuestion;
+                    const testCases = activeSetObj?.testCases || currentQuestion?.testCases || [];
+                    const problemTitle = activeSetObj?.title || currentQuestion?.question || "Online Coding Problem";
+                    const problemDesc = activeSetObj?.problemStatement || currentQuestion?.question || "";
+
+                    return (
+                      <div className="space-y-4 flex-1 flex flex-col min-h-[400px]">
+                        <div className="bg-slate-900 text-white p-4 rounded-xl space-y-2 border border-slate-800 shadow-md">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded">
+                              {assignedSet ? `Assigned Paper: ${assignedSet}` : "Online Coding Problem"}
+                            </span>
+                            <span className="text-xs font-bold text-slate-300">Total Marks: {activeSetObj?.marks || currentQuestion?.marks || 100}</span>
+                          </div>
+                          <h3 className="text-sm font-bold text-white">{problemTitle}</h3>
+                          <p className="text-xs text-slate-300 font-mono whitespace-pre-line leading-relaxed">{problemDesc}</p>
+                        </div>
+
+                        {/* Interactive Code Editor & Test Runner */}
+                        <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-3 shadow-sm">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs font-bold text-slate-700">Write Code (Java, Python, C++, C, JavaScript):</Label>
+                            <span className="text-[10px] bg-slate-100 text-slate-600 font-mono px-2 py-0.5 rounded border border-slate-200">
+                              AUTO-SAVED
+                            </span>
+                          </div>
+
+                          <textarea
+                            value={currentAns}
+                            onChange={(e) => updateAnswer(currentQuestion._id, e.target.value)}
+                            placeholder="// Write your code solution here..."
+                            rows={12}
+                            className="w-full p-3 font-mono text-xs bg-slate-950 text-emerald-400 border border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 leading-relaxed shadow-inner"
+                          />
+
+                          {/* Test Cases Summary */}
+                          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 text-xs">
+                            <div className="flex items-center justify-between font-bold text-slate-700">
+                              <span>Configured Test Cases ({testCases.length})</span>
+                              <span className="text-[10px] text-slate-500">Open cases visible • Hidden cases evaluated upon final submission</span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {testCases.map((tc: any, i: number) => (
+                                <div key={i} className={`p-2.5 rounded-lg border text-[11px] font-mono ${
+                                  tc.isHidden ? "bg-amber-50 border-amber-200 text-amber-900" : "bg-emerald-50 border-emerald-200 text-emerald-900"
+                                }`}>
+                                  <div className="font-bold mb-0.5">
+                                    {tc.isHidden ? `🔒 Hidden Evaluation Case #${i + 1}` : `🌐 Open Sample Case #${i + 1}`}
+                                  </div>
+                                  {!tc.isHidden && (
+                                    <div className="space-y-0.5 text-[10px]">
+                                      <div><span className="font-bold text-slate-500">Input:</span> {tc.input}</div>
+                                      <div><span className="font-bold text-slate-500">Output:</span> {tc.expectedOutput}</div>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   return null;
                 })()}
               </div>
@@ -2738,6 +3418,8 @@ const ExamPage = () => {
           <span className="font-semibold">{totalQuestions}</span>
         </div>
       </footer>
+      </>
+      )}
 
       {/* HIDDEN PROCTOR CANVAS */}
       <canvas ref={canvasRef} width={32} height={32} className="hidden" />

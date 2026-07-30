@@ -31,10 +31,17 @@ const CoreAdminLogin = () => {
       password === savedAdmin.password
     ) {
       setLoading(true);
+      const adminUser = {
+        name: "Core System Admin",
+        email: savedAdmin.email || "coreadmin@secureexam.com",
+        role: "admin",
+        loginTimestamp: Date.now()
+      };
       localStorage.setItem("coreAdmin", "true");
-      navigate("/coreadmin");
+      localStorage.setItem("user", JSON.stringify(adminUser));
+      navigate("/system-admin");
     } else {
-      setError("Invalid admin credentials");
+      setError("Invalid master admin credentials");
     }
   };
 

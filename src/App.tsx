@@ -7,16 +7,18 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ExamStoreProvider } from "@/contexts/ExamStoreContext";
 
+import AdminDashboard from "./pages/AdminDashboard";
+import SystemAdminPanel from "./pages/SystemAdminPanel";
+import CoreAdminRoute from "@/routes/CoreAdminRoute";
+import SystemAdminRoute from "@/routes/SystemAdminRoute";
+
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
-const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const StudentDashboard = lazy(() => import("./pages/StudentDashboard"));
 const ExamPage = lazy(() => import("./pages/ExamPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const SignupPage = lazy(() => import("./pages/Signup"));
 const CoreAdminLogin = lazy(() => import("./pages/CoreAdminLogin"));
-
-const CoreAdminRoute = lazy(() => import("@/routes/CoreAdminRoute"));
 
 const queryClient = new QueryClient();
 
@@ -25,11 +27,13 @@ const ProtectedRoute = ({
   role,
 }: {
   children: React.ReactNode;
-  role: "admin" | "student";
+  role: "admin" | "examiner" | "student";
 }) => {
   const { user, isAuthenticated } = useAuth();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  if (user?.role !== role) return <Navigate to="/" replace />;
+  if (role === "admin" && user?.role !== "admin") return <Navigate to="/" replace />;
+  if (role === "examiner" && user?.role !== "examiner" && user?.role !== "admin") return <Navigate to="/" replace />;
+  if (role === "student" && user?.role !== "student") return <Navigate to="/" replace />;
   return <>{children}</>;
 };
 
@@ -63,6 +67,22 @@ const App = () => (
                     <CoreAdminRoute>
                       <AdminDashboard />
                     </CoreAdminRoute>
+                  }
+                />
+                <Route
+                  path="/examiner"
+                  element={
+                    <CoreAdminRoute>
+                      <AdminDashboard />
+                    </CoreAdminRoute>
+                  }
+                />
+                <Route
+                  path="/system-admin"
+                  element={
+                    <SystemAdminRoute>
+                      <SystemAdminPanel />
+                    </SystemAdminRoute>
                   }
                 />
                 <Route path="/login" element={<LoginPage />} />
