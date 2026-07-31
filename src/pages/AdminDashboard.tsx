@@ -76,12 +76,13 @@ function getGoogleDriveEmbedUrl(url: string): string {
 }
 
 import { useAuth } from "@/contexts/AuthContext";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const { logout } = useAuth();
   const [exams, setExams] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const fetchExams = useCallback(async (silent = false) => {
     try {
@@ -2292,14 +2293,25 @@ const AdminDashboard = () => {
                       <FileText className="h-4 w-4" />
                     </div>
                   </div>
-                  <div>
-                    <h3 className="text-3xl font-black text-slate-900 tracking-tight">{exams.length}</h3>
-                    <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 mt-2 font-bold">
-                      <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-100">{exams.filter(e => e.assessmentType === "standard" || !e.assessmentType).length} Standard</span>
-                      <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-100">{exams.filter(e => e.assessmentType === "online_coding").length} Coding</span>
-                      <span className="bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded border border-purple-100">{exams.filter(e => e.assessmentType === "paper_code" || e.assessmentType === "coding_hybrid").length} Paper</span>
+                  {loading ? (
+                    <div className="space-y-2 py-1">
+                      <Skeleton className="h-8 w-20 bg-blue-100/80 rounded-md animate-pulse" />
+                      <div className="flex gap-1 mt-2">
+                        <Skeleton className="h-4 w-12 bg-blue-50/80 rounded" />
+                        <Skeleton className="h-4 w-12 bg-emerald-50/80 rounded" />
+                        <Skeleton className="h-4 w-12 bg-purple-50/80 rounded" />
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div>
+                      <h3 className="text-3xl font-black text-slate-900 tracking-tight">{exams.length}</h3>
+                      <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 mt-2 font-bold">
+                        <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-100">{exams.filter(e => e.assessmentType === "standard" || !e.assessmentType).length} Standard</span>
+                        <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-100">{exams.filter(e => e.assessmentType === "online_coding").length} Coding</span>
+                        <span className="bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded border border-purple-100">{exams.filter(e => e.assessmentType === "paper_code" || e.assessmentType === "coding_hybrid").length} Paper</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Metric 2: Paper Code & Coding Drives */}
@@ -2311,14 +2323,21 @@ const AdminDashboard = () => {
                       <Code2 className="h-4 w-4" />
                     </div>
                   </div>
-                  <div>
-                    <h3 className="text-3xl font-black text-purple-900 tracking-tight">
-                      {exams.filter(e => e.assessmentType === "paper_code" || e.assessmentType === "coding_hybrid" || e.assessmentType === "online_coding").length}
-                    </h3>
-                    <div className="text-[10px] text-purple-600 font-extrabold mt-2 flex items-center gap-1">
-                      <span className="bg-purple-50 border border-purple-100 px-2 py-0.5 rounded text-purple-700">Set A, B, C, D Allocation</span>
+                  {loading ? (
+                    <div className="space-y-2 py-1">
+                      <Skeleton className="h-8 w-16 bg-purple-100/80 rounded-md animate-pulse" />
+                      <Skeleton className="h-4 w-32 bg-purple-50/80 rounded mt-2" />
                     </div>
-                  </div>
+                  ) : (
+                    <div>
+                      <h3 className="text-3xl font-black text-purple-900 tracking-tight">
+                        {exams.filter(e => e.assessmentType === "paper_code" || e.assessmentType === "coding_hybrid" || e.assessmentType === "online_coding").length}
+                      </h3>
+                      <div className="text-[10px] text-purple-600 font-extrabold mt-2 flex items-center gap-1">
+                        <span className="bg-purple-50 border border-purple-100 px-2 py-0.5 rounded text-purple-700">Set A, B, C, D Allocation</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Metric 3: Active Test-Takers */}
@@ -2330,15 +2349,22 @@ const AdminDashboard = () => {
                       <Activity className="h-4 w-4 animate-pulse" />
                     </div>
                   </div>
-                  <div>
-                    <h3 className="text-3xl font-black text-emerald-600 tracking-tight">
-                      {Object.keys(activeCandidates).length}
-                    </h3>
-                    <div className="text-[10px] text-emerald-700 font-extrabold mt-2 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                      <span>Telemetry Live</span>
+                  {loading ? (
+                    <div className="space-y-2 py-1">
+                      <Skeleton className="h-8 w-16 bg-emerald-100/80 rounded-md animate-pulse" />
+                      <Skeleton className="h-4 w-24 bg-emerald-50/80 rounded mt-2" />
                     </div>
-                  </div>
+                  ) : (
+                    <div>
+                      <h3 className="text-3xl font-black text-emerald-600 tracking-tight">
+                        {Object.keys(activeCandidates).length}
+                      </h3>
+                      <div className="text-[10px] text-emerald-700 font-extrabold mt-2 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                        <span>Telemetry Live</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Metric 4: Total Questions Pool */}
@@ -2350,12 +2376,19 @@ const AdminDashboard = () => {
                       <Grid className="h-4 w-4" />
                     </div>
                   </div>
-                  <div>
-                    <h3 className="text-3xl font-black text-slate-900 tracking-tight">{totalQuestionsPool}</h3>
-                    <div className="text-[10px] text-slate-500 font-bold mt-2">
-                      Available in Question Banks
+                  {loading ? (
+                    <div className="space-y-2 py-1">
+                      <Skeleton className="h-8 w-16 bg-indigo-100/80 rounded-md animate-pulse" />
+                      <Skeleton className="h-4 w-32 bg-indigo-50/80 rounded mt-2" />
                     </div>
-                  </div>
+                  ) : (
+                    <div>
+                      <h3 className="text-3xl font-black text-slate-900 tracking-tight">{totalQuestionsPool}</h3>
+                      <div className="text-[10px] text-slate-500 font-bold mt-2">
+                        Available in Question Banks
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Metric 5: Platform Integrity Score */}
@@ -2367,12 +2400,19 @@ const AdminDashboard = () => {
                       <Shield className="h-4 w-4" />
                     </div>
                   </div>
-                  <div>
-                    <h3 className="text-3xl font-black text-slate-900 tracking-tight">98.6%</h3>
-                    <div className="text-[10px] text-emerald-600 font-bold mt-2 flex items-center gap-1">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> AI Proctor Verified
+                  {loading ? (
+                    <div className="space-y-2 py-1">
+                      <Skeleton className="h-8 w-20 bg-amber-100/80 rounded-md animate-pulse" />
+                      <Skeleton className="h-4 w-28 bg-amber-50/80 rounded mt-2" />
                     </div>
-                  </div>
+                  ) : (
+                    <div>
+                      <h3 className="text-3xl font-black text-slate-900 tracking-tight">98.6%</h3>
+                      <div className="text-[10px] text-emerald-600 font-bold mt-2 flex items-center gap-1">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> AI Proctor Verified
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -2446,7 +2486,22 @@ const AdminDashboard = () => {
                   </div>
 
                   <div className="space-y-3">
-                    {exams.length === 0 ? (
+                    {loading ? (
+                      <div className="space-y-3">
+                        {[1, 2, 3].map((i) => (
+                          <div key={i} className="p-4 border border-slate-100 rounded-xl space-y-2.5 bg-slate-50/50 animate-pulse">
+                            <div className="flex items-center justify-between">
+                              <Skeleton className="h-5 w-52 bg-slate-200 rounded-md" />
+                              <Skeleton className="h-5 w-24 bg-blue-100/70 rounded-md" />
+                            </div>
+                            <div className="flex items-center gap-3 pt-1">
+                              <Skeleton className="h-3.5 w-32 bg-slate-200/80 rounded" />
+                              <Skeleton className="h-3.5 w-24 bg-emerald-100/70 rounded" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : exams.length === 0 ? (
                       <div className="text-center py-8 text-slate-400 text-xs font-semibold">
                         No assessment drives created yet. Click "Create Assessment" to build one.
                       </div>
@@ -2691,9 +2746,18 @@ const AdminDashboard = () => {
 
                 {/* Table element */}
                 {loading ? (
-                  <div className="text-center py-12 text-slate-400 text-sm">
-                    <span className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin inline-block mr-2 align-middle" />
-                    Loading exam schedules...
+                  <div className="space-y-3 p-4">
+                    {[1, 2, 3, 4].map((i) => (
+                      <div key={i} className="flex items-center justify-between p-4 border border-slate-100 rounded-xl bg-slate-50/50 animate-pulse">
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-56 bg-slate-200 rounded" />
+                          <Skeleton className="h-3 w-32 bg-slate-100 rounded" />
+                        </div>
+                        <Skeleton className="h-6 w-20 bg-blue-100/70 rounded-md" />
+                        <Skeleton className="h-4 w-16 bg-slate-200 rounded" />
+                        <Skeleton className="h-8 w-24 bg-slate-200 rounded-lg" />
+                      </div>
+                    ))}
                   </div>
                 ) : filteredExams.length === 0 ? (
                   <div className="text-center py-12 text-slate-400 text-sm">
