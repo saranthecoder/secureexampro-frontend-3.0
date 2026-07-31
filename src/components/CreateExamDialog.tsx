@@ -1260,35 +1260,32 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
                       ...questionSets,
                       {
                         setName: `Set ${nextLetter}`,
-                        title: `Set ${nextLetter}: Online Coding Problem`,
                         marks: 100,
                         paperMaxMarks: 50,
                         executionMaxMarks: 50,
-                        problemStatement: `Set ${nextLetter}: Given target input data, write an optimal solution.`,
-                        sampleInputOutput: "Input:\nOutput:",
-                        instructions: "1. Write logic on paper.\n2. Execute code in IDE.",
-                        testCases: [
-                          {
-                            input: "Sample Input 1",
-                            expectedOutput: "Sample Output 1",
-                            explanation: "Open Sample Test Case",
-                            isHidden: false,
-                            weightage: 50
-                          },
-                          {
-                            input: "Evaluation Input 2",
-                            expectedOutput: "Evaluation Output 2",
-                            explanation: "Hidden Evaluation Test Case",
-                            isHidden: true,
-                            weightage: 50
-                          }
-                        ],
                         problems: [
                           {
-                            title: "Problem 1",
+                            title: `Problem 1`,
                             problemStatement: `Set ${nextLetter}: Given target input data, write an optimal solution.`,
+                            marks: 50,
                             sampleInputOutput: "Input:\nOutput:",
-                            instructions: "1. Write logic on paper.\n2. Execute code in IDE."
+                            instructions: "1. Write logic on paper.\n2. Execute code in IDE.",
+                            testCases: [
+                              {
+                                input: "Sample Input 1",
+                                expectedOutput: "Sample Output 1",
+                                explanation: "Open Sample Test Case",
+                                isHidden: false,
+                                weightage: 25
+                              },
+                              {
+                                input: "Evaluation Input 2",
+                                expectedOutput: "Evaluation Output 2",
+                                explanation: "Hidden Evaluation Test Case",
+                                isHidden: true,
+                                weightage: 25
+                              }
+                            ]
                           }
                         ]
                       }
@@ -1301,210 +1298,286 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
               </div>
 
               {/* SETS LIST */}
-              <div className="space-y-5">
+              <div className="space-y-6">
                 {questionSets.map((s, sIdx) => {
-                  const currentTestCases = s.testCases && s.testCases.length > 0 ? s.testCases : [
-                    {
-                      input: "Sample Input 1",
-                      expectedOutput: "Sample Output 1",
-                      explanation: "Open Sample Test Case",
-                      isHidden: false,
-                      weightage: 50
-                    },
-                    {
-                      input: "Evaluation Input 2",
-                      expectedOutput: "Evaluation Output 2",
-                      explanation: "Hidden Evaluation Test Case",
-                      isHidden: true,
-                      weightage: 50
-                    }
-                  ];
+                  const problemsInSet = s.problems && Array.isArray(s.problems) && s.problems.length > 0
+                    ? s.problems
+                    : [
+                        {
+                          title: s.title || `Set ${s.setName}: Problem 1`,
+                          problemStatement: s.problemStatement || "",
+                          marks: s.marks || 100,
+                          testCases: s.testCases && s.testCases.length > 0 ? s.testCases : [
+                            {
+                              input: "Sample Input 1",
+                              expectedOutput: "Sample Output 1",
+                              explanation: "Open Sample Test Case",
+                              isHidden: false,
+                              weightage: 50
+                            },
+                            {
+                              input: "Evaluation Input 2",
+                              expectedOutput: "Evaluation Output 2",
+                              explanation: "Hidden Evaluation Test Case",
+                              isHidden: true,
+                              weightage: 50
+                            }
+                          ]
+                        }
+                      ];
 
                   return (
-                    <div key={sIdx} className="p-4 bg-white border border-emerald-300/80 rounded-2xl space-y-3.5 shadow-sm text-left relative">
-                      <div className="flex items-center justify-between border-b pb-2.5">
+                    <div key={sIdx} className="p-4.5 bg-white border border-emerald-300/80 rounded-2xl space-y-5 shadow-sm text-left relative">
+                      <div className="flex items-center justify-between border-b pb-3">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-black text-emerald-950 bg-emerald-100 border border-emerald-300 px-3 py-1 rounded-lg">
                             {s.setName}
                           </span>
                           <span className="text-[11px] font-bold text-slate-500">
-                            Set #{sIdx + 1} Question Paper
+                            Set #{sIdx + 1} ({problemsInSet.length} {problemsInSet.length === 1 ? "Problem" : "Problems"})
                           </span>
                         </div>
 
-                        {questionSets.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => setQuestionSets(questionSets.filter((_, i) => i !== sIdx))}
-                            className="text-red-500 hover:text-red-700 text-xs font-extrabold flex items-center gap-1 bg-red-50 hover:bg-red-100 px-2 py-1 rounded-md border border-red-200"
-                          >
-                            Remove {s.setName}
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="col-span-2">
-                          <Label className="text-[11px] font-extrabold text-slate-700 block mb-1">Problem Title</Label>
-                          <Input
-                            placeholder={`e.g. ${s.setName}: Problem Title`}
-                            value={s.title || `Set ${s.setName}: Coding Problem`}
-                            onChange={(e) => {
-                              const updated = [...questionSets];
-                              updated[sIdx].title = e.target.value;
-                              setQuestionSets(updated);
-                            }}
-                            className="h-9 text-xs bg-white font-bold border-slate-200"
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-[11px] font-extrabold text-slate-700 block mb-1">Marks Weightage</Label>
-                          <Input
-                            type="number"
-                            value={s.marks || 100}
-                            onChange={(e) => {
-                              const updated = [...questionSets];
-                              updated[sIdx].marks = Number(e.target.value) || 100;
-                              setQuestionSets(updated);
-                            }}
-                            className="h-9 text-xs bg-white font-bold border-slate-200"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <Label className="text-[11px] font-extrabold text-slate-700 block mb-1">Problem Statement & Constraints</Label>
-                        <textarea
-                          placeholder="Enter detailed problem statement, input format, output format, and constraints..."
-                          value={s.problemStatement || ""}
-                          onChange={(e) => {
-                            const updated = [...questionSets];
-                            updated[sIdx].problemStatement = e.target.value;
-                            setQuestionSets(updated);
-                          }}
-                          rows={3}
-                          className="w-full p-2.5 rounded-lg border border-slate-200 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
-                        />
-                      </div>
-
-                      {/* TEST CASES LIST FOR THIS SET */}
-                      <div className="pt-2 border-t border-slate-100 space-y-2.5">
-                        <div className="flex items-center justify-between text-xs font-bold text-slate-700">
-                          <span>{s.setName} Test Cases ({currentTestCases.length})</span>
+                        <div className="flex items-center gap-2">
                           <Button
                             type="button"
                             size="sm"
                             onClick={() => {
                               const updated = [...questionSets];
-                              if (!updated[sIdx].testCases) updated[sIdx].testCases = [...currentTestCases];
-                              updated[sIdx].testCases.push({
-                                input: "Sample Input",
-                                expectedOutput: "Sample Output",
-                                explanation: "Evaluation Case",
-                                isHidden: false,
-                                weightage: 25
+                              if (!updated[sIdx].problems) updated[sIdx].problems = [...problemsInSet];
+                              updated[sIdx].problems.push({
+                                title: `Problem ${updated[sIdx].problems.length + 1}`,
+                                problemStatement: `Enter problem statement for Problem ${updated[sIdx].problems.length + 1}...`,
+                                marks: 50,
+                                testCases: [
+                                  { input: "Sample Input", expectedOutput: "Sample Output", explanation: "Sample Test Case", isHidden: false, weightage: 25 },
+                                  { input: "Evaluation Input", expectedOutput: "Evaluation Output", explanation: "Hidden Evaluation Case", isHidden: true, weightage: 25 }
+                                ]
                               });
                               setQuestionSets(updated);
                             }}
-                            className="bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 font-extrabold text-[10px] h-7 px-2.5 rounded"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] h-7 px-2.5 rounded-lg flex items-center gap-1"
                           >
-                            + Add Test Case to {s.setName}
+                            <Plus className="h-3 w-3" /> + Add Problem to {s.setName}
                           </Button>
+
+                          {questionSets.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setQuestionSets(questionSets.filter((_, i) => i !== sIdx))}
+                              className="text-red-500 hover:text-red-700 text-xs font-extrabold flex items-center gap-1 bg-red-50 hover:bg-red-100 px-2 py-1 rounded-md border border-red-200"
+                            >
+                              Remove {s.setName}
+                            </button>
+                          )}
                         </div>
+                      </div>
 
-                        {currentTestCases.map((tc: any, tcIdx: number) => (
-                          <div key={tcIdx} className={`p-3 rounded-xl border space-y-2 text-xs transition-all ${
-                            tc.isHidden ? "bg-amber-50/50 border-amber-200" : "bg-emerald-50/50 border-emerald-200"
-                          }`}>
-                            <div className="flex items-center justify-between border-b pb-1.5">
-                              <span className={`text-[10px] font-black px-2 py-0.5 rounded ${
-                                tc.isHidden ? "bg-amber-100 text-amber-900 border border-amber-300" : "bg-emerald-100 text-emerald-900 border border-emerald-300"
-                              }`}>
-                                {tc.isHidden ? `🔒 Hidden Case #${tcIdx + 1}` : `🌐 Open Case #${tcIdx + 1}`}
-                              </span>
+                      {/* PROBLEMS IN THIS SET */}
+                      <div className="space-y-6">
+                        {problemsInSet.map((p: any, pIdx: number) => {
+                          const pTestCases = p.testCases && Array.isArray(p.testCases) && p.testCases.length > 0
+                            ? p.testCases
+                            : (s.testCases || []);
 
-                              <div className="flex items-center gap-3">
-                                <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
-                                  <span>Marks:</span>
-                                  <input
-                                    type="number"
-                                    value={tc.weightage || tc.marks || 25}
-                                    onChange={(e) => {
-                                      const updated = [...questionSets];
-                                      if (!updated[sIdx].testCases) updated[sIdx].testCases = [...currentTestCases];
-                                      const val = Number(e.target.value) || 0;
-                                      updated[sIdx].testCases[tcIdx].weightage = val;
-                                      updated[sIdx].testCases[tcIdx].marks = val;
-                                      setQuestionSets(updated);
-                                    }}
-                                    className="w-14 h-6 px-1 rounded border border-slate-300 text-xs font-bold bg-white text-center"
-                                  />
-                                </div>
+                          return (
+                            <div key={pIdx} className="p-4 border border-slate-200 rounded-xl bg-slate-50/40 space-y-3.5 relative">
+                              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                                <span className="text-xs font-extrabold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-md">
+                                  Problem #{pIdx + 1}
+                                </span>
 
-                                <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={tc.isHidden}
-                                    onChange={(e) => {
-                                      const updated = [...questionSets];
-                                      if (!updated[sIdx].testCases) updated[sIdx].testCases = [...currentTestCases];
-                                      updated[sIdx].testCases[tcIdx].isHidden = e.target.checked;
-                                      setQuestionSets(updated);
-                                    }}
-                                    className="rounded text-amber-600 focus:ring-amber-500 h-3.5 w-3.5"
-                                  />
-                                  Hidden Evaluation Case
-                                </label>
-
-                                {currentTestCases.length > 1 && (
+                                {problemsInSet.length > 1 && (
                                   <button
                                     type="button"
                                     onClick={() => {
                                       const updated = [...questionSets];
-                                      if (!updated[sIdx].testCases) updated[sIdx].testCases = [...currentTestCases];
-                                      updated[sIdx].testCases = updated[sIdx].testCases.filter((_: any, i: number) => i !== tcIdx);
+                                      if (!updated[sIdx].problems) updated[sIdx].problems = [...problemsInSet];
+                                      updated[sIdx].problems = updated[sIdx].problems.filter((_: any, i: number) => i !== pIdx);
                                       setQuestionSets(updated);
                                     }}
-                                    className="text-red-500 hover:text-red-700 text-[10px] font-bold"
+                                    className="text-red-500 hover:text-red-700 text-[11px] font-bold"
                                   >
-                                    Remove
+                                    Remove Problem #{pIdx + 1}
                                   </button>
                                 )}
                               </div>
-                            </div>
 
-                            <div className="grid grid-cols-2 gap-2.5">
+                              <div className="grid grid-cols-3 gap-3">
+                                <div className="col-span-2">
+                                  <Label className="text-[11px] font-extrabold text-slate-700 block mb-1">Problem Title</Label>
+                                  <Input
+                                    placeholder={`e.g. Problem ${pIdx + 1}: Longest Substring`}
+                                    value={p.title || `Problem ${pIdx + 1}`}
+                                    onChange={(e) => {
+                                      const updated = [...questionSets];
+                                      if (!updated[sIdx].problems) updated[sIdx].problems = [...problemsInSet];
+                                      updated[sIdx].problems[pIdx].title = e.target.value;
+                                      setQuestionSets(updated);
+                                    }}
+                                    className="h-9 text-xs bg-white font-bold border-slate-200"
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-[11px] font-extrabold text-slate-700 block mb-1">Marks Weightage</Label>
+                                  <Input
+                                    type="number"
+                                    value={p.marks || 50}
+                                    onChange={(e) => {
+                                      const updated = [...questionSets];
+                                      if (!updated[sIdx].problems) updated[sIdx].problems = [...problemsInSet];
+                                      updated[sIdx].problems[pIdx].marks = Number(e.target.value) || 0;
+                                      setQuestionSets(updated);
+                                    }}
+                                    className="h-9 text-xs bg-white font-bold border-slate-200"
+                                  />
+                                </div>
+                              </div>
+
                               <div>
-                                <Label className="text-[10px] font-bold text-slate-600 block mb-0.5">Input (Stdin)</Label>
+                                <Label className="text-[11px] font-extrabold text-slate-700 block mb-1">Problem Statement & Constraints</Label>
                                 <textarea
-                                  value={tc.input}
+                                  placeholder="Enter detailed problem statement, input format, output format, and constraints..."
+                                  value={p.problemStatement || ""}
                                   onChange={(e) => {
                                     const updated = [...questionSets];
-                                    if (!updated[sIdx].testCases) updated[sIdx].testCases = [...currentTestCases];
-                                    updated[sIdx].testCases[tcIdx].input = e.target.value;
+                                    if (!updated[sIdx].problems) updated[sIdx].problems = [...problemsInSet];
+                                    updated[sIdx].problems[pIdx].problemStatement = e.target.value;
                                     setQuestionSets(updated);
                                   }}
-                                  rows={2}
-                                  className="w-full p-2 rounded-lg border border-slate-200 font-mono text-[11px] bg-white"
+                                  rows={3}
+                                  className="w-full p-2.5 rounded-lg border border-slate-200 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
                                 />
                               </div>
-                              <div>
-                                <Label className="text-[10px] font-bold text-slate-600 block mb-0.5">Expected Output (Stdout)</Label>
-                                <textarea
-                                  value={tc.expectedOutput}
-                                  onChange={(e) => {
-                                    const updated = [...questionSets];
-                                    if (!updated[sIdx].testCases) updated[sIdx].testCases = [...currentTestCases];
-                                    updated[sIdx].testCases[tcIdx].expectedOutput = e.target.value;
-                                    setQuestionSets(updated);
-                                  }}
-                                  rows={2}
-                                  className="w-full p-2 rounded-lg border border-slate-200 font-mono text-[11px] bg-white"
-                                />
+
+                              {/* TEST CASES LIST FOR THIS PROBLEM */}
+                              <div className="pt-2 border-t border-slate-200 space-y-2.5">
+                                <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                                  <span>Problem #{pIdx + 1} Test Cases ({pTestCases.length})</span>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    onClick={() => {
+                                      const updated = [...questionSets];
+                                      if (!updated[sIdx].problems) updated[sIdx].problems = [...problemsInSet];
+                                      if (!updated[sIdx].problems[pIdx].testCases) updated[sIdx].problems[pIdx].testCases = [...pTestCases];
+                                      updated[sIdx].problems[pIdx].testCases.push({
+                                        input: "Sample Input",
+                                        expectedOutput: "Sample Output",
+                                        explanation: "Evaluation Case",
+                                        isHidden: false,
+                                        weightage: 25
+                                      });
+                                      setQuestionSets(updated);
+                                    }}
+                                    className="bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 font-extrabold text-[10px] h-6 px-2 rounded"
+                                  >
+                                    + Add Test Case to Problem #{pIdx + 1}
+                                  </Button>
+                                </div>
+
+                                {pTestCases.map((tc: any, tcIdx: number) => (
+                                  <div key={tcIdx} className={`p-3 rounded-xl border space-y-2 text-xs transition-all ${
+                                    tc.isHidden ? "bg-amber-50/50 border-amber-200" : "bg-emerald-50/50 border-emerald-200"
+                                  }`}>
+                                    <div className="flex items-center justify-between border-b pb-1.5">
+                                      <span className={`text-[10px] font-black px-2 py-0.5 rounded ${
+                                        tc.isHidden ? "bg-amber-100 text-amber-900 border border-amber-300" : "bg-emerald-100 text-emerald-900 border border-emerald-300"
+                                      }`}>
+                                        {tc.isHidden ? `🔒 Hidden Case #${tcIdx + 1}` : `🌐 Open Case #${tcIdx + 1}`}
+                                      </span>
+
+                                      <div className="flex items-center gap-3">
+                                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
+                                          <span>Marks:</span>
+                                          <input
+                                            type="number"
+                                            value={tc.weightage || tc.marks || 25}
+                                            onChange={(e) => {
+                                              const updated = [...questionSets];
+                                              if (!updated[sIdx].problems) updated[sIdx].problems = [...problemsInSet];
+                                              if (!updated[sIdx].problems[pIdx].testCases) updated[sIdx].problems[pIdx].testCases = [...pTestCases];
+                                              const val = Number(e.target.value) || 0;
+                                              updated[sIdx].problems[pIdx].testCases[tcIdx].weightage = val;
+                                              updated[sIdx].problems[pIdx].testCases[tcIdx].marks = val;
+                                              setQuestionSets(updated);
+                                            }}
+                                            className="w-14 h-6 px-1 rounded border border-slate-300 text-xs font-bold bg-white text-center"
+                                          />
+                                        </div>
+
+                                        <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={tc.isHidden}
+                                            onChange={(e) => {
+                                              const updated = [...questionSets];
+                                              if (!updated[sIdx].problems) updated[sIdx].problems = [...problemsInSet];
+                                              if (!updated[sIdx].problems[pIdx].testCases) updated[sIdx].problems[pIdx].testCases = [...pTestCases];
+                                              updated[sIdx].problems[pIdx].testCases[tcIdx].isHidden = e.target.checked;
+                                              setQuestionSets(updated);
+                                            }}
+                                            className="rounded text-amber-600 focus:ring-amber-500 h-3.5 w-3.5"
+                                          />
+                                          Hidden Evaluation Case
+                                        </label>
+
+                                        {pTestCases.length > 1 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const updated = [...questionSets];
+                                              if (!updated[sIdx].problems) updated[sIdx].problems = [...problemsInSet];
+                                              if (!updated[sIdx].problems[pIdx].testCases) updated[sIdx].problems[pIdx].testCases = [...pTestCases];
+                                              updated[sIdx].problems[pIdx].testCases = updated[sIdx].problems[pIdx].testCases.filter((_: any, i: number) => i !== tcIdx);
+                                              setQuestionSets(updated);
+                                            }}
+                                            className="text-red-500 hover:text-red-700 text-[10px] font-bold"
+                                          >
+                                            Remove
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-2.5">
+                                      <div>
+                                        <Label className="text-[10px] font-bold text-slate-600 block mb-0.5">Input (Stdin)</Label>
+                                        <textarea
+                                          value={tc.input}
+                                          onChange={(e) => {
+                                            const updated = [...questionSets];
+                                            if (!updated[sIdx].problems) updated[sIdx].problems = [...problemsInSet];
+                                            if (!updated[sIdx].problems[pIdx].testCases) updated[sIdx].problems[pIdx].testCases = [...pTestCases];
+                                            updated[sIdx].problems[pIdx].testCases[tcIdx].input = e.target.value;
+                                            setQuestionSets(updated);
+                                          }}
+                                          rows={2}
+                                          className="w-full p-2 rounded-lg border border-slate-200 font-mono text-[11px] bg-white"
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label className="text-[10px] font-bold text-slate-600 block mb-0.5">Expected Output (Stdout)</Label>
+                                        <textarea
+                                          value={tc.expectedOutput}
+                                          onChange={(e) => {
+                                            const updated = [...questionSets];
+                                            if (!updated[sIdx].problems) updated[sIdx].problems = [...problemsInSet];
+                                            if (!updated[sIdx].problems[pIdx].testCases) updated[sIdx].problems[pIdx].testCases = [...pTestCases];
+                                            updated[sIdx].problems[pIdx].testCases[tcIdx].expectedOutput = e.target.value;
+                                            setQuestionSets(updated);
+                                          }}
+                                          rows={2}
+                                          className="w-full p-2 rounded-lg border border-slate-200 font-mono text-[11px] bg-white"
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   );
