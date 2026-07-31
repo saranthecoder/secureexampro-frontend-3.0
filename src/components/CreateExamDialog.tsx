@@ -213,39 +213,68 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
         }
 
         if (assessmentType === "online_coding" || assessmentType === "paper_code" || assessmentType === "coding_hybrid") {
-          // Parse rows into Question Sets for coding/paper assessments
+          // Parse rows into Question Sets & Problems for coding/paper assessments
           const parsedSetsMap: { [key: string]: any } = {};
           rows.forEach((row, idx) => {
-            const setName = row["Set Name"] || row["Set"] || `Set ${String.fromCharCode(65 + idx)}`;
+            const setName = (row["Set Name"] || row["Set"] || `Set ${String.fromCharCode(65 + idx)}`).toString().trim();
+            const probTitle = (row["Problem Title"] || row["Title"] || row["Problem"] || "Problem 1").toString().trim();
+            const probStatement = (row["Problem Statement"] || row["Question"] || `Given target problem data, write an optimal solution.`).toString().trim();
+            const sampleIO = (row["Sample Input Output"] || "Input:\nOutput:").toString().trim();
+            const instructions = (row["Instructions"] || "1. Write code in IDE.").toString().trim();
+            const probMarks = Number(row["Problem Marks"] || row["Marks"] || 50);
+
             if (!parsedSetsMap[setName]) {
               parsedSetsMap[setName] = {
                 setName,
-                title: row["Title"] || row["Problem Title"] || `${setName}: Coding Assessment Problem`,
-                marks: Number(row["Marks"] || 100),
+                title: `${setName}: Online Coding Assessment`,
+                marks: 0,
                 paperMaxMarks: Number(row["Paper Logic Marks"] || 50),
                 executionMaxMarks: Number(row["Execution Output Marks"] || 50),
-                problemStatement: row["Problem Statement"] || row["Question"] || `Given target problem data, write an optimal solution.`,
-                sampleInputOutput: row["Sample Input Output"] || "Input:\nOutput:",
-                instructions: row["Instructions"] || "1. Write logic on paper.\n2. Execute code in IDE.",
-                testCases: [],
-                problems: [
-                  {
-                    title: row["Title"] || "Problem 1",
-                    problemStatement: row["Problem Statement"] || row["Question"] || "Problem Statement",
-                    sampleInputOutput: row["Sample Input Output"] || "Input:\nOutput:",
-                    instructions: row["Instructions"] || "1. Write logic on paper."
-                  }
-                ]
+                problemsMap: {},
+                problems: [],
+                testCases: []
               };
             }
 
-            if (row["Test Case Input"] || row["Input"]) {
-              parsedSetsMap[setName].testCases.push({
-                input: String(row["Test Case Input"] || row["Input"] || ""),
-                expectedOutput: String(row["Expected Output"] || row["Output"] || ""),
-                explanation: String(row["Explanation"] || "Evaluation Test Case"),
-                isHidden: String(row["Is Hidden"] || "").toLowerCase() === "true" || row["Is Hidden"] === true || row["Is Hidden"] === 1,
-                weightage: Number(row["Weightage"] || 50)
+            const setObj = parsedSetsMap[setName];
+            if (!setObj.problemsMap[probTitle]) {
+              const newProb = {
+                id: `prob_${Object.keys(setObj.problemsMap).length + 1}`,
+                title: probTitle,
+                problemStatement: probStatement,
+                sampleInputOutput: sampleIO,
+                instructions: instructions,
+                marks: probMarks,
+                testCases: []
+              };
+              setObj.problemsMap[probTitle] = newProb;
+              setObj.problems.push(newProb);
+              setObj.marks += probMarks;
+            }
+
+            const probObj = setObj.problemsMap[probTitle];
+
+            const testInput = row["Test Case Input"] !== undefined ? row["Test Case Input"] : row["Input"];
+            const testOutput = row["Expected Output"] !== undefined ? row["Expected Output"] : row["Output"];
+
+            if (testInput !== undefined || testOutput !== undefined) {
+              const isHidden = String(row["Is Hidden"] || "").toLowerCase() === "true" || row["Is Hidden"] === true || row["Is Hidden"] === 1;
+              const tcMarks = Number(row["Test Case Marks"] || row["Weightage"] || 25);
+              const tcExplanation = String(row["Explanation"] || (isHidden ? "Hidden Evaluation Case" : "Sample Test Case"));
+
+              const tcObj = {
+                input: String(testInput || ""),
+                expectedOutput: String(testOutput || ""),
+                explanation: tcExplanation,
+                isHidden,
+                weightage: tcMarks,
+                marks: tcMarks
+              };
+
+              probObj.testCases.push(tcObj);
+              setObj.testCases.push({
+                ...tcObj,
+                problemTitle: probTitle
               });
             }
           });
@@ -297,39 +326,81 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
       sampleData = [
         {
           "Set Name": "Set A",
-          "Title": "Set A: Find Longest Substring Without Repeating Characters",
+          "Problem Title": "Problem 1: Longest Substring Without Repeating Characters",
           "Problem Statement": "Given a string s, find the length of the longest substring without repeating characters.",
-          "Marks": 100,
-          "Starter Template Python": "def solve():\n    pass",
+          "Sample Input Output": "Input: s = \"abcabcbb\"\nOutput: 3",
+          "Instructions": "1. Write optimal O(N) solution.\n2. Handle edge cases.",
+          "Problem Marks": 50,
           "Test Case Input": "abcabcbb",
           "Expected Output": "3",
-          "Explanation": "The answer is 'abc', with length 3.",
           "Is Hidden": false,
-          "Weightage": 50
+          "Test Case Marks": 20,
+          "Explanation": "Sample Case 1: 'abc' has length 3"
         },
         {
           "Set Name": "Set A",
-          "Title": "Set A: Find Longest Substring Without Repeating Characters",
+          "Problem Title": "Problem 1: Longest Substring Without Repeating Characters",
           "Problem Statement": "Given a string s, find the length of the longest substring without repeating characters.",
-          "Marks": 100,
-          "Starter Template Python": "def solve():\n    pass",
+          "Sample Input Output": "Input: s = \"abcabcbb\"\nOutput: 3",
+          "Instructions": "1. Write optimal O(N) solution.\n2. Handle edge cases.",
+          "Problem Marks": 50,
           "Test Case Input": "bbbbb",
           "Expected Output": "1",
-          "Explanation": "Hidden Evaluation Case",
           "Is Hidden": true,
-          "Weightage": 50
+          "Test Case Marks": 30,
+          "Explanation": "Hidden Evaluation Case: all identical characters"
+        },
+        {
+          "Set Name": "Set A",
+          "Problem Title": "Problem 2: Reverse Linked List",
+          "Problem Statement": "Given the head of a singly linked list, reverse the list, and return the reversed list.",
+          "Sample Input Output": "Input: head = [1,2,3,4,5]\nOutput: [5,4,3,2,1]",
+          "Instructions": "1. Iterative or recursive approach.",
+          "Problem Marks": 50,
+          "Test Case Input": "1 2 3 4 5",
+          "Expected Output": "5 4 3 2 1",
+          "Is Hidden": false,
+          "Test Case Marks": 25,
+          "Explanation": "Sample Case 1"
+        },
+        {
+          "Set Name": "Set A",
+          "Problem Title": "Problem 2: Reverse Linked List",
+          "Problem Statement": "Given the head of a singly linked list, reverse the list, and return the reversed list.",
+          "Sample Input Output": "Input: head = [1,2,3,4,5]\nOutput: [5,4,3,2,1]",
+          "Instructions": "1. Iterative or recursive approach.",
+          "Problem Marks": 50,
+          "Test Case Input": "1 2",
+          "Expected Output": "2 1",
+          "Is Hidden": true,
+          "Test Case Marks": 25,
+          "Explanation": "Hidden Evaluation Case"
         },
         {
           "Set Name": "Set B",
-          "Title": "Set B: Valid Parentheses Matching",
+          "Problem Title": "Problem 1: Valid Parentheses Matching",
           "Problem Statement": "Given a string s containing just characters '(', ')', '{', '}', '[' and ']', determine if input string is valid.",
-          "Marks": 100,
-          "Starter Template Python": "def isValid(s):\n    pass",
+          "Sample Input Output": "Input: s = \"()[]{}\"\nOutput: true",
+          "Instructions": "1. Use Stack data structure.",
+          "Problem Marks": 100,
           "Test Case Input": "()[]{}",
           "Expected Output": "true",
-          "Explanation": "Open Sample Test Case",
           "Is Hidden": false,
-          "Weightage": 50
+          "Test Case Marks": 50,
+          "Explanation": "Sample Case 1"
+        },
+        {
+          "Set Name": "Set B",
+          "Problem Title": "Problem 1: Valid Parentheses Matching",
+          "Problem Statement": "Given a string s containing just characters '(', ')', '{', '}', '[' and ']', determine if input string is valid.",
+          "Sample Input Output": "Input: s = \"()[]{}\"\nOutput: true",
+          "Instructions": "1. Use Stack data structure.",
+          "Problem Marks": 100,
+          "Test Case Input": "(]",
+          "Expected Output": "false",
+          "Is Hidden": true,
+          "Test Case Marks": 50,
+          "Explanation": "Hidden Evaluation Case: mismatched brackets"
         }
       ];
     } else if (assessmentType === "paper_code" || assessmentType === "coding_hybrid") {
@@ -531,36 +602,65 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
       if (assessmentType === "online_coding" || assessmentType === "paper_code" || assessmentType === "coding_hybrid") {
         const parsedSetsMap: { [key: string]: any } = {};
         rows.forEach((row, idx) => {
-          const setName = row["Set Name"] || row["Set"] || `Set ${String.fromCharCode(65 + idx)}`;
+          const setName = (row["Set Name"] || row["Set"] || `Set ${String.fromCharCode(65 + idx)}`).toString().trim();
+          const probTitle = (row["Problem Title"] || row["Title"] || row["Problem"] || "Problem 1").toString().trim();
+          const probStatement = (row["Problem Statement"] || row["Question"] || `Given target problem data, write an optimal solution.`).toString().trim();
+          const sampleIO = (row["Sample Input Output"] || "Input:\nOutput:").toString().trim();
+          const instructions = (row["Instructions"] || "1. Write code in IDE.").toString().trim();
+          const probMarks = Number(row["Problem Marks"] || row["Marks"] || 50);
+
           if (!parsedSetsMap[setName]) {
             parsedSetsMap[setName] = {
               setName,
-              title: row["Title"] || row["Problem Title"] || `${setName}: Coding Assessment Problem`,
-              marks: Number(row["Marks"] || 100),
+              title: `${setName}: Online Coding Assessment`,
+              marks: 0,
               paperMaxMarks: Number(row["Paper Logic Marks"] || 50),
               executionMaxMarks: Number(row["Execution Output Marks"] || 50),
-              problemStatement: row["Problem Statement"] || row["Question"] || `Given target problem data, write an optimal solution.`,
-              sampleInputOutput: row["Sample Input Output"] || "Input:\nOutput:",
-              instructions: row["Instructions"] || "1. Write logic on paper.\n2. Execute code in IDE.",
-              testCases: [],
-              problems: [
-                {
-                  title: row["Title"] || "Problem 1",
-                  problemStatement: row["Problem Statement"] || row["Question"] || "Problem Statement",
-                  sampleInputOutput: row["Sample Input Output"] || "Input:\nOutput:",
-                  instructions: row["Instructions"] || "1. Write logic on paper."
-                }
-              ]
+              problemsMap: {},
+              problems: [],
+              testCases: []
             };
           }
 
-          if (row["Test Case Input"] || row["Input"]) {
-            parsedSetsMap[setName].testCases.push({
-              input: String(row["Test Case Input"] || row["Input"] || ""),
-              expectedOutput: String(row["Expected Output"] || row["Output"] || ""),
-              explanation: String(row["Explanation"] || "Evaluation Test Case"),
-              isHidden: String(row["Is Hidden"] || "").toLowerCase() === "true" || row["Is Hidden"] === true || row["Is Hidden"] === 1,
-              weightage: Number(row["Weightage"] || 50)
+          const setObj = parsedSetsMap[setName];
+          if (!setObj.problemsMap[probTitle]) {
+            const newProb = {
+              id: `prob_${Object.keys(setObj.problemsMap).length + 1}`,
+              title: probTitle,
+              problemStatement: probStatement,
+              sampleInputOutput: sampleIO,
+              instructions: instructions,
+              marks: probMarks,
+              testCases: []
+            };
+            setObj.problemsMap[probTitle] = newProb;
+            setObj.problems.push(newProb);
+            setObj.marks += probMarks;
+          }
+
+          const probObj = setObj.problemsMap[probTitle];
+
+          const testInput = row["Test Case Input"] !== undefined ? row["Test Case Input"] : row["Input"];
+          const testOutput = row["Expected Output"] !== undefined ? row["Expected Output"] : row["Output"];
+
+          if (testInput !== undefined || testOutput !== undefined) {
+            const isHidden = String(row["Is Hidden"] || "").toLowerCase() === "true" || row["Is Hidden"] === true || row["Is Hidden"] === 1;
+            const tcMarks = Number(row["Test Case Marks"] || row["Weightage"] || 25);
+            const tcExplanation = String(row["Explanation"] || (isHidden ? "Hidden Evaluation Case" : "Sample Test Case"));
+
+            const tcObj = {
+              input: String(testInput || ""),
+              expectedOutput: String(testOutput || ""),
+              explanation: tcExplanation,
+              isHidden,
+              weightage: tcMarks,
+              marks: tcMarks
+            };
+
+            probObj.testCases.push(tcObj);
+            setObj.testCases.push({
+              ...tcObj,
+              problemTitle: probTitle
             });
           }
         });
@@ -1324,6 +1424,23 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
                               </span>
 
                               <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
+                                  <span>Marks:</span>
+                                  <input
+                                    type="number"
+                                    value={tc.weightage || tc.marks || 25}
+                                    onChange={(e) => {
+                                      const updated = [...questionSets];
+                                      if (!updated[sIdx].testCases) updated[sIdx].testCases = [...currentTestCases];
+                                      const val = Number(e.target.value) || 0;
+                                      updated[sIdx].testCases[tcIdx].weightage = val;
+                                      updated[sIdx].testCases[tcIdx].marks = val;
+                                      setQuestionSets(updated);
+                                    }}
+                                    className="w-14 h-6 px-1 rounded border border-slate-300 text-xs font-bold bg-white text-center"
+                                  />
+                                </div>
+
                                 <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700 cursor-pointer">
                                   <input
                                     type="checkbox"

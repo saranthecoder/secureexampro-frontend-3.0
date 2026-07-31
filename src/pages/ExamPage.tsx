@@ -2293,14 +2293,33 @@ const ExamPage = () => {
 
       {/* CONDITIONAL: Online Coding IDE vs Standard MCQ Layout */}
       {exam?.assessmentType === "online_coding" ? (() => {
-        const activeSetObj = exam?.questionSets?.find((qs: any) => qs.setName === assignedSet);
-        const problemTitle = activeSetObj?.title || exam?.questions?.[0]?.question || "Coding Problem";
-        const problemDesc = activeSetObj?.problemStatement || exam?.questions?.[0]?.question || "";
-        const testCases = activeSetObj?.testCases || exam?.questions?.[0]?.testCases || [];
-        const constraints = activeSetObj?.constraints || "";
-        const examples = activeSetObj?.examples || [];
+        const activeSetObj = exam?.questionSets?.find((qs: any) => qs.setName === assignedSet) || exam?.questionSets?.[0];
+
+        const rawProblemsList = activeSetObj?.problems && Array.isArray(activeSetObj.problems) && activeSetObj.problems.length > 0
+          ? activeSetObj.problems
+          : [
+              {
+                title: activeSetObj?.title || exam?.questions?.[0]?.question || "Coding Assessment Problem",
+                problemStatement: activeSetObj?.problemStatement || exam?.questions?.[0]?.question || "",
+                sampleInputOutput: activeSetObj?.sampleInputOutput || "",
+                instructions: activeSetObj?.instructions || "",
+                marks: activeSetObj?.marks || 50,
+                testCases: activeSetObj?.testCases || exam?.questions?.[0]?.testCases || []
+              }
+            ];
+
+        const currentProbIdx = currentCodingProblemIndex < rawProblemsList.length ? currentCodingProblemIndex : 0;
+        const activeProblemObj = rawProblemsList[currentProbIdx] || rawProblemsList[0];
+
+        const problemTitle = activeProblemObj?.title || activeSetObj?.title || "Coding Assessment Problem";
+        const problemDesc = activeProblemObj?.problemStatement || activeSetObj?.problemStatement || "";
+        const testCases = activeProblemObj?.testCases && Array.isArray(activeProblemObj.testCases) && activeProblemObj.testCases.length > 0
+          ? activeProblemObj.testCases
+          : (activeSetObj?.testCases || []);
+        const constraints = activeProblemObj?.constraints || activeSetObj?.constraints || "";
+        const examples = activeProblemObj?.examples || activeSetObj?.examples || [];
         const currentQ = exam?.questions?.[0];
-        const targetQId = currentQ?._id || activeSetObj?._id || "online_coding_q1";
+        const targetQId = `${activeSetObj?._id || "online_coding"}_prob_${currentProbIdx + 1}`;
         const savedAnswerObj = answers.find((a: any) => a.questionId === targetQId || a.questionId === "online_coding_q1" || (currentQ?._id && a.questionId === currentQ._id));
 
         const langMap: Record<string, string> = {
@@ -2477,11 +2496,24 @@ const ExamPage = () => {
               style={{ width: `${leftPanelWidth}%` }}
               className="flex flex-col border-r border-slate-700 bg-[#1e1e1e] overflow-hidden"
             >
-              {/* Problem Header */}
-              <div className="flex items-center gap-0 bg-[#2d2d2d] border-b border-slate-700 px-0">
-                <button className="px-4 py-2.5 text-xs font-bold text-white bg-[#1e1e1e] border-b-2 border-emerald-500">
-                  Description
-                </button>
+              {/* Problem Header & Multi-Problem Selector */}
+              <div className="flex flex-wrap items-center justify-between bg-[#2d2d2d] border-b border-slate-700 px-3 py-1.5 gap-2">
+                <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar">
+                  {rawProblemsList.map((pObj: any, pIdx: number) => (
+                    <button
+                      key={pIdx}
+                      type="button"
+                      onClick={() => setCurrentCodingProblemIndex(pIdx)}
+                      className={`px-3 py-1 text-xs font-extrabold rounded-lg transition-all ${
+                        pIdx === currentProbIdx
+                          ? "bg-emerald-600 text-white shadow-sm border border-emerald-500"
+                          : "bg-[#1e1e1e] text-slate-400 hover:text-white hover:bg-[#363636] border border-slate-700"
+                      }`}
+                    >
+                      {pObj.title ? (pObj.title.length > 22 ? pObj.title.substring(0, 20) + "..." : pObj.title) : `Problem ${pIdx + 1}`}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Problem Content */}
@@ -2491,6 +2523,9 @@ const ExamPage = () => {
                   <div className="flex items-center gap-2 mb-2">
                     <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
                       {assignedSet ? `Set: ${assignedSet}` : "Problem"}
+                    </span>
+                    <span className="bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
+                      Problem {currentProbIdx + 1} of {rawProblemsList.length}
                     </span>
                     <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded text-[10px] font-bold">
                       {activeSetObj?.difficulty || "Medium"}
