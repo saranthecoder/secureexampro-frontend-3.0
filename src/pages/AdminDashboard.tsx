@@ -1630,6 +1630,12 @@ const AdminDashboard = () => {
     const questions = examData?.questions || [];
 
     const dataToExport = results.map((r: any, index: number) => {
+      const totalSecs = r.answers && Array.isArray(r.answers) 
+        ? r.answers.reduce((sum: number, a: any) => sum + Number(a.timeSpent || 0), 0) 
+        : 0;
+      const totalMins = Math.floor(totalSecs / 60);
+      const remainingSecs = totalSecs % 60;
+
       const row: any = {
         "S.No": index + 1,
         "Student Name": r.studentName,
@@ -1639,6 +1645,7 @@ const AdminDashboard = () => {
         "Positive Marks Obtained": r.isActive ? "-" : (r.positiveMarks || 0),
         "Negative Marks Obtained": r.isActive ? "-" : (r.negativeMarks || 0),
         "Total Marks": r.totalMarks,
+        "Total Time Spent": `${totalMins}m ${remainingSecs}s`,
         "Tab Switches": r.tabSwitchCount || 0,
         "Face Warnings": r.faceWarningCount || 0,
         "Noise Warnings": r.noiseWarningCount || 0,
@@ -1658,15 +1665,25 @@ const AdminDashboard = () => {
         "Submission Date": r.submittedAt ? new Date(r.submittedAt).toLocaleString() : "N/A"
       };
 
-      // Per-question time spent columns
-      if (r.answers && Array.isArray(r.answers)) {
-        r.answers.forEach((ans: any, qIdx: number) => {
-          const matchedQ = questions.find((q: any) => q._id === ans.questionId);
-          const qLabel = matchedQ ? `Q${qIdx + 1} (${(matchedQ.questionText || "").substring(0, 30)}...)` : `Q${qIdx + 1}`;
-          const seconds = ans.timeSpent || 0;
+      // Per-question choice and time spent columns
+      if (questions && Array.isArray(questions) && questions.length > 0) {
+        questions.forEach((q: any, qIdx: number) => {
+          const ans = r.answers?.find((a: any) => String(a.questionId) === String(q._id) || String(a.questionId) === String(q.id));
+          const seconds = ans ? Number(ans.timeSpent || 0) : 0;
           const mins = Math.floor(seconds / 60);
           const secs = seconds % 60;
-          row[`Time - ${qLabel}`] = `${mins}m ${secs}s`;
+          const choice = ans ? (ans.selectedOption || "(Unanswered)") : "(Unanswered)";
+          
+          row[`Q${qIdx + 1} Choice`] = choice;
+          row[`Q${qIdx + 1} Time Spent`] = `${mins}m ${secs}s`;
+        });
+      } else if (r.answers && Array.isArray(r.answers)) {
+        r.answers.forEach((ans: any, qIdx: number) => {
+          const seconds = Number(ans.timeSpent || 0);
+          const mins = Math.floor(seconds / 60);
+          const secs = seconds % 60;
+          row[`Q${qIdx + 1} Choice`] = ans.selectedOption || "(Unanswered)";
+          row[`Q${qIdx + 1} Time Spent`] = `${mins}m ${secs}s`;
         });
       }
 
@@ -3925,7 +3942,7 @@ const AdminDashboard = () => {
                                       {r.score}
                                     </td>
                                     {viewingExamAnalysis.questions.map((q: any) => {
-                                      const ans = r.answers?.find((a: any) => a.questionId === q._id);
+                                      const ans = r.answers?.find((a: any) => String(a.questionId) === String(q._id));
                                       const selected = ans ? (ans.selectedOption || "").trim() : "";
                                       const cleanCorrect = (q.correctAnswer || "").trim();
                                       const qType = q.questionType || (q.isMultipleCorrect ? "MSQ" : "MCQ");
@@ -4041,11 +4058,15 @@ const AdminDashboard = () => {
                               <div className="text-slate-500 font-extrabold mb-1">Candidate Time Spent List:</div>
                               <div className="flex flex-wrap gap-1.5 max-h-[50px] overflow-y-auto">
                                 {analysisResults.map((r, ri) => {
-                                  const ans = r.answers?.find((a: any) => a.questionId === qs._id);
-                                  const time = ans ? ans.timeSpent || 0 : 0;
+                                  const ans = r.answers?.find((a: any) => String(a.questionId) === String(qs._id) || String(a.questionId) === String(qs.id));
+                                  const time = ans ? Number(ans.timeSpent || 0) : 0;
+                                  const mins = Math.floor(time / 60);
+                                  const secs = time % 60;
+                                  const timeStr = `${mins}m ${secs}s`;
                                   return (
-                                    <span key={ri} className="bg-white border border-slate-150 px-2 py-0.5 rounded text-slate-600 font-mono text-[9px]" title={`${r.studentName} (${r.studentEmail})`}>
-                                      {r.studentName.split(" ")[0]}: {time}s
+                                    <span key={ri} className="bg-white border border-slate-200 px-2 py-0.5 rounded text-slate-700 font-mono text-[9px] font-bold shadow-2xs flex items-center gap-1" title={`${r.studentName} (${r.studentEmail})`}>
+                                      <span>{r.studentName.split(" ")[0]}:</span>
+                                      <span className="text-blue-600 font-black">{timeStr}</span>
                                     </span>
                                   );
                                 })}
@@ -4564,8 +4585,13 @@ const AdminDashboard = () => {
                   <div className="space-y-3">
                     {activeReviewExam.questions.map((q: any, idx: number) => {
                       const qType = q.questionType || (q.isMultipleCorrect ? "MSQ" : "MCQ");
-                      const answerObj = viewingStudentResult?.answers?.find((a: any) => a.questionId === q._id);
+                      const answerObj = viewingStudentResult?.answers?.find((a: any) => String(a.questionId) === String(q._id) || String(a.questionId) === String(q.id));
                       const selectedVal = answerObj ? answerObj.selectedOption : "";
+
+                      const secondsSpent = answerObj ? Number(answerObj.timeSpent || 0) : 0;
+                      const minsSpent = Math.floor(secondsSpent / 60);
+                      const secsSpent = secondsSpent % 60;
+                      const timeSpentBadgeText = `${minsSpent}m ${secsSpent}s`;
 
                       let isCorrect = false;
                       let isPartial = false;
@@ -4658,10 +4684,13 @@ const AdminDashboard = () => {
 
                       return (
                         <div key={q._id || idx} className="p-3.5 border border-slate-150 rounded-xl bg-white space-y-2 hover:border-slate-250 transition-colors">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="text-[10px] bg-slate-100 text-slate-500 font-bold px-2 py-0.5 rounded">Q{idx + 1}</span>
                             <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-100 font-extrabold px-2 py-0.5 rounded uppercase">{q.section || "General"}</span>
                             <span className="text-[10px] text-slate-400 font-bold font-mono">Type: {qType}</span>
+                            <span className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 font-extrabold px-2 py-0.5 rounded flex items-center gap-1">
+                              <Clock className="h-3 w-3 text-amber-600" /> Time Spent: {timeSpentBadgeText}
+                            </span>
                             <div className="ml-auto flex items-center gap-1.5">
                               {statusBadge}
                               <span className="text-[10px] text-slate-500 font-extrabold bg-slate-100 px-1.5 py-0.5 rounded">Score: {scoreBadge}</span>

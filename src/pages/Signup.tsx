@@ -105,103 +105,48 @@ const SignupPage = () => {
             </div>
 
             {/* Header */}
-            <div className="text-center mb-8">
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900">
-                Create Account
+            <div className="text-center mb-6">
+              <div className="mx-auto w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 mb-4 shadow-sm">
+                <Lock className="h-6 w-6" />
+              </div>
+              <h2 className="text-2xl font-black tracking-tight text-slate-900">
+                Self-Registration Restricted
               </h2>
-              <p className="text-xs text-slate-500 mt-2">
-                Register candidate details below to build your qualifier examination profile.
+              <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                Direct candidate self-registration is disabled. Student assessment profiles are provisioned exclusively by the System Admin & Examination Controller.
               </p>
             </div>
 
-            {/* Form */}
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-slate-700">Full Name</Label>
-                <Input
-                  placeholder="e.g. John Doe"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="bg-slate-50/50 border-slate-200 focus-visible:ring-blue-500 h-10 text-sm"
-                />
+            {/* Restricted Notice Box */}
+            <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 text-xs space-y-3 text-left">
+              <div className="flex items-start gap-2.5 text-slate-700 font-medium">
+                <UserCheck className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                <span>Only students added by the Core Admin can log in using their assigned Register ID / Roll Number and 6-digit PIN.</span>
               </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-slate-700">Email Address</Label>
-                <Input
-                  type="email"
-                  placeholder="student@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="bg-slate-50/50 border-slate-200 focus-visible:ring-blue-500 h-10 text-sm"
-                />
+              <div className="flex items-start gap-2.5 text-slate-700 font-medium">
+                <Shield className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                <span>To receive access to examination drives, please contact your university administrator or placement coordinator.</span>
               </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-slate-700">Password</Label>
-                <Input
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="bg-slate-50/50 border-slate-200 focus-visible:ring-blue-500 h-10 text-sm"
-                />
-              </div>
-
-              {/* Role selector (styled as corporate badges) */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-slate-700">Profile Purpose</Label>
-                <div className="flex gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setRole("student")}
-                    className={`flex-1 py-2 text-xs font-bold border rounded-lg transition-all ${
-                      role === "student"
-                        ? "bg-blue-50 text-blue-600 border-blue-200 shadow-sm"
-                        : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
-                    }`}
-                  >
-                    Candidate (Take Exams)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRole("admin")}
-                    className={`flex-1 py-2 text-xs font-bold border rounded-lg transition-all ${
-                      role === "admin"
-                        ? "bg-blue-50 text-blue-600 border-blue-200 shadow-sm"
-                        : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
-                    }`}
-                  >
-                    Examiner (Create Pools)
-                  </button>
-                </div>
-              </div>
-
-              {error && (
-                <div className="rounded-lg bg-red-50 p-3 text-xs text-red-600 border border-red-200 flex items-center gap-2">
-                  <Shield className="h-4 w-4 text-red-500 flex-shrink-0" />
-                  {error}
-                </div>
-              )}
-
-              <Button
-                type="submit"
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold h-10 text-sm shadow-md transition-all mt-4"
-              >
-                Register & Verify
-              </Button>
-            </form>
-
-            <div className="mt-6 text-center text-xs text-slate-500">
-              Already have an account?{" "}
-              <span
-                className="text-blue-600 font-bold cursor-pointer hover:underline"
-                onClick={() => navigate("/login")}
-              >
-                Login here
-              </span>
             </div>
-            
+
+            <div className="space-y-2.5 mt-6">
+              <Button
+                type="button"
+                onClick={() => navigate("/login")}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold h-11 text-sm shadow-md transition-all rounded-xl"
+              >
+                Go to Student Login Portal
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => navigate("/coreadmin-login")}
+                className="w-full text-slate-700 border-slate-200 hover:bg-slate-50 font-bold h-10 text-xs rounded-xl"
+              >
+                System Admin Portal
+              </Button>
+            </div>
+
             <div className="mt-8 text-center text-[10px] text-slate-400 border-t border-slate-100 pt-4 flex items-center justify-center gap-1.5">
               <UserCheck className="h-3 w-3" /> Powered by SR Ecosystem Assessment Portal
             </div>
