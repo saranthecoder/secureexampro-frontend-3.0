@@ -189,6 +189,32 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
     setAssessmentType("standard");
   };
 
+  const cleanCellValue = (val: any): string => {
+    if (val === undefined || val === null) return "";
+    const str = String(val).trim();
+    if (str === "") return "";
+
+    // Handle Excel date serial artifacts (e.g. 47776.00011574074)
+    if (typeof val === "number" || (!isNaN(Number(str)) && str.includes("."))) {
+      const num = Number(str);
+      if (num > 35000 && num < 70000 && str.length > 10 && str.includes(".")) {
+        const date = new Date(Math.round((num - 25569) * 86400 * 1000));
+        if (!isNaN(date.getTime())) {
+          const h = date.getUTCHours();
+          const m = date.getUTCMinutes();
+          const s = date.getUTCSeconds();
+          if (h > 0 || m > 0 || s > 0) {
+            return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')} ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+          } else {
+            return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+          }
+        }
+      }
+    }
+
+    return str;
+  };
+
   // Preview parse for Excel uploads across all assessment types
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -203,9 +229,9 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
     reader.onload = (evt) => {
       try {
         const data = new Uint8Array(evt.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: "array" });
+        const workbook = XLSX.read(data, { type: "array", cellDates: false, raw: false });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows: any[] = XLSX.utils.sheet_to_json(sheet);
+        const rows: any[] = XLSX.utils.sheet_to_json(sheet, { raw: false, defval: "" });
 
         if (!rows.length) {
           setParseError("Excel file is empty.");
@@ -216,11 +242,11 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
           // Parse rows into Question Sets & Problems for coding/paper assessments
           const parsedSetsMap: { [key: string]: any } = {};
           rows.forEach((row, idx) => {
-            const setName = (row["Set Name"] || row["Set"] || `Set ${String.fromCharCode(65 + idx)}`).toString().trim();
-            const probTitle = (row["Problem Title"] || row["Title"] || row["Problem"] || "Problem 1").toString().trim();
-            const probStatement = (row["Problem Statement"] || row["Question"] || `Given target problem data, write an optimal solution.`).toString().trim();
-            const sampleIO = (row["Sample Input Output"] || "Input:\nOutput:").toString().trim();
-            const instructions = (row["Instructions"] || "1. Write code in IDE.").toString().trim();
+            const setName = (cleanCellValue(row["Set Name"] || row["Set"]) || `Set ${String.fromCharCode(65 + idx)}`).trim();
+            const probTitle = (cleanCellValue(row["Problem Title"] || row["Title"] || row["Problem"]) || "Problem 1").trim();
+            const probStatement = (cleanCellValue(row["Problem Statement"] || row["Question"]) || `Given target problem data, write an optimal solution.`).trim();
+            const sampleIO = (cleanCellValue(row["Sample Input Output"]) || "Input:\nOutput:").trim();
+            const instructions = (cleanCellValue(row["Instructions"]) || "1. Write code in IDE.").trim();
             const probMarks = Number(row["Problem Marks"] || row["Marks"] || 50);
 
             if (!parsedSetsMap[setName]) {
@@ -254,17 +280,17 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
 
             const probObj = setObj.problemsMap[probTitle];
 
-            const testInput = row["Test Case Input"] !== undefined ? row["Test Case Input"] : row["Input"];
-            const testOutput = row["Expected Output"] !== undefined ? row["Expected Output"] : row["Output"];
+            const testInput = row["Test Case Input"] !== undefined && row["Test Case Input"] !== "" ? row["Test Case Input"] : row["Input"];
+            const testOutput = row["Expected Output"] !== undefined && row["Expected Output"] !== "" ? row["Expected Output"] : row["Output"];
 
             if (testInput !== undefined || testOutput !== undefined) {
               const isHidden = String(row["Is Hidden"] || "").toLowerCase() === "true" || row["Is Hidden"] === true || row["Is Hidden"] === 1;
               const tcMarks = Number(row["Test Case Marks"] || row["Weightage"] || 25);
-              const tcExplanation = String(row["Explanation"] || (isHidden ? "Hidden Evaluation Case" : "Sample Test Case"));
+              const tcExplanation = cleanCellValue(row["Explanation"]) || (isHidden ? "Hidden Evaluation Case" : "Sample Test Case");
 
               const tcObj = {
-                input: String(testInput || ""),
-                expectedOutput: String(testOutput || ""),
+                input: cleanCellValue(testInput),
+                expectedOutput: cleanCellValue(testOutput),
                 explanation: tcExplanation,
                 isHidden,
                 weightage: tcMarks,
@@ -590,10 +616,10 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
 
       const csvText = await res.text();
       const XLSX = await import("xlsx");
-      const workbook = XLSX.read(csvText, { type: "string" });
+      const workbook = XLSX.read(csvText, { type: "string", cellDates: false, raw: false });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
-      const rows: any[] = XLSX.utils.sheet_to_json(sheet);
+      const rows: any[] = XLSX.utils.sheet_to_json(sheet, { raw: false, defval: "" });
 
       if (!rows || rows.length === 0) {
         throw new Error("No question rows found in the imported Google Sheet.");
@@ -602,11 +628,11 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
       if (assessmentType === "online_coding" || assessmentType === "paper_code" || assessmentType === "coding_hybrid") {
         const parsedSetsMap: { [key: string]: any } = {};
         rows.forEach((row, idx) => {
-          const setName = (row["Set Name"] || row["Set"] || `Set ${String.fromCharCode(65 + idx)}`).toString().trim();
-          const probTitle = (row["Problem Title"] || row["Title"] || row["Problem"] || "Problem 1").toString().trim();
-          const probStatement = (row["Problem Statement"] || row["Question"] || `Given target problem data, write an optimal solution.`).toString().trim();
-          const sampleIO = (row["Sample Input Output"] || "Input:\nOutput:").toString().trim();
-          const instructions = (row["Instructions"] || "1. Write code in IDE.").toString().trim();
+          const setName = (cleanCellValue(row["Set Name"] || row["Set"]) || `Set ${String.fromCharCode(65 + idx)}`).trim();
+          const probTitle = (cleanCellValue(row["Problem Title"] || row["Title"] || row["Problem"]) || "Problem 1").trim();
+          const probStatement = (cleanCellValue(row["Problem Statement"] || row["Question"]) || `Given target problem data, write an optimal solution.`).trim();
+          const sampleIO = (cleanCellValue(row["Sample Input Output"]) || "Input:\nOutput:").trim();
+          const instructions = (cleanCellValue(row["Instructions"]) || "1. Write code in IDE.").trim();
           const probMarks = Number(row["Problem Marks"] || row["Marks"] || 50);
 
           if (!parsedSetsMap[setName]) {
@@ -640,17 +666,17 @@ const CreateExamDialog = ({ onExamCreated }: CreateExamDialogProps) => {
 
           const probObj = setObj.problemsMap[probTitle];
 
-          const testInput = row["Test Case Input"] !== undefined ? row["Test Case Input"] : row["Input"];
-          const testOutput = row["Expected Output"] !== undefined ? row["Expected Output"] : row["Output"];
+          const testInput = row["Test Case Input"] !== undefined && row["Test Case Input"] !== "" ? row["Test Case Input"] : row["Input"];
+          const testOutput = row["Expected Output"] !== undefined && row["Expected Output"] !== "" ? row["Expected Output"] : row["Output"];
 
           if (testInput !== undefined || testOutput !== undefined) {
             const isHidden = String(row["Is Hidden"] || "").toLowerCase() === "true" || row["Is Hidden"] === true || row["Is Hidden"] === 1;
             const tcMarks = Number(row["Test Case Marks"] || row["Weightage"] || 25);
-            const tcExplanation = String(row["Explanation"] || (isHidden ? "Hidden Evaluation Case" : "Sample Test Case"));
+            const tcExplanation = cleanCellValue(row["Explanation"]) || (isHidden ? "Hidden Evaluation Case" : "Sample Test Case");
 
             const tcObj = {
-              input: String(testInput || ""),
-              expectedOutput: String(testOutput || ""),
+              input: cleanCellValue(testInput),
+              expectedOutput: cleanCellValue(testOutput),
               explanation: tcExplanation,
               isHidden,
               weightage: tcMarks,
